@@ -636,22 +636,14 @@ class LLMService:
         if self.current_assistant and self.current_assistant.type != 4:
             _ds_list = get_assistant_ds(session=_session, llm_service=self)
         else:
-            stmt = select(CoreDatasource).where(and_(CoreDatasource.oid == self.current_user.oid))
+            stmt = select(CoreDatasource).where(and_(CoreDatasource.oid == self.current_user.oid,
+                                                     CoreDatasource.type != "api"))
             _ds_list = []
-            for ds in _session.exec(stmt):
+            for raw_ds in _session.exec(stmt):
+                ds = self.coerce_core_datasource(raw_ds)
+                if not ds:
+                    continue
                 description = ds.description or ""
-                if self.is_api_datasource(ds):
-                    try:
-                        api_parts = []
-                        for source in get_api_sources_from_ds(ds):
-                            api_parts.append(" ".join([
-                                str(source.get("name") or ""),
-                                str(source.get("description") or ""),
-                                " ".join([str(item) for item in source.get("keywords") or []]),
-                            ]))
-                        description = f"{description} {' '.join(api_parts)}".strip()
-                    except Exception:
-                        pass
                 _ds_list.append({
                     "id": ds.id,
                     "name": ds.name,

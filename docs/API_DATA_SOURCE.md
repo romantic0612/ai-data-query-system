@@ -4,10 +4,11 @@ API is a backend datasource type. Users do not choose an API mode. They ask ques
 
 The routing strategy is:
 
-1. Match API capabilities first.
-2. If an API capability matches, call the API directly.
-3. If no API capability matches, fall back to the original datasource selection and SQL query flow.
-4. If neither API nor database can answer, the system should later produce a data demand document.
+1. Try fast API rule/keyword/capability matching first.
+2. If a clear API capability matches, call the API directly without using the model.
+3. If fast matching misses, use the system default model to parse structured intent JSON and match API capabilities again.
+4. If no API capability matches, fall back to the original datasource selection and SQL query flow.
+5. If neither API nor database can answer, the system should later produce a data demand document.
 
 ## Capability Catalog
 
@@ -41,7 +42,7 @@ Each API endpoint is treated as one capability. A capability can include both na
 }
 ```
 
-The current implementation uses the system default model to parse the user question into structured intent JSON, then combines that result with rule scoring. If model parsing fails, it falls back to rule/keyword matching.
+The current implementation first uses fast rule scoring. Only when that misses does it use the system default model to parse the user question into structured intent JSON.
 
 ## Natural Language Parameters
 

@@ -126,10 +126,11 @@ API is a backend datasource type, not a chat mode. Users should not need to know
 
 In the admin datasource page, add a datasource with type `API`, then paste JSON configuration with an `api_sources` array. During chat, API capabilities are matched before database datasources:
 
-1. The backend first uses the system default model to parse intent JSON, then matches API `name`, `description`, `keywords`, `domain`, `intent`, `metrics`, and `dimensions`.
-2. If an API capability matches, the backend calls the API and skips SQL generation.
-3. If no API capability matches, the backend falls back to the normal datasource selector and SQL flow.
-4. Natural language parameter extraction uses the default model, with a rule fallback for `days`, such as `近7天`.
+1. The backend first tries fast API rule matching against `name`, `description`, `keywords`, `domain`, `intent`, `metrics`, and `dimensions`.
+2. If an API capability matches, the backend calls the API and skips SQL generation without calling the model.
+3. If fast matching misses, the backend uses the system default model to parse intent JSON and match API capabilities again.
+4. If no API capability matches, the backend falls back to the normal datasource selector and SQL flow.
+5. Natural language parameter extraction uses quick rules first, then the default model when needed.
 
 Documentation:
 

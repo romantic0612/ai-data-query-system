@@ -1523,8 +1523,11 @@ class LLMService:
 
     def select_api_datasource_first(self, session: Session) -> Optional[Dict[str, Any]]:
         sources = self.load_api_sources(session, self.current_user.oid)
-        intent = self.analyze_api_intent(sources)
-        source = self.try_select_api_source(sources, intent)
+        intent = None
+        source = self.try_select_api_source(sources)
+        if not source:
+            intent = self.analyze_api_intent(sources)
+            source = self.try_select_api_source(sources, intent)
         if not source:
             return None
         datasource_id = source.get("datasource_id")

@@ -1,0 +1,59 @@
+api_sources:
+  - id: undergraduate_count
+    name: 普通本科生人数
+    description: 查询学校普通本科生人数统计
+    keywords:
+      - 普通本科生人数
+      - 普通本科生
+      - 本科生人数
+      - 学生人数
+    method: GET
+    # Fill this with a real school API later, for example:
+    # url: https://school.example.edu/api/students/undergraduate-count
+    url:
+    timeout: 15
+    headers:
+      # Example: Authorization: ${SCHOOL_API_TOKEN}
+    params:
+    result_path:
+    field_mapping:
+      student_level: 学生类型
+      metric_name: 指标名称
+      student_count: 学生人数
+      unit: 单位
+    raw_answer:
+      label_template: "{student_level}{metric_name}"
+      value_field: student_count
+      unit_field: unit
+    mock_response:
+      student_level: 普通本科生
+      metric_name: 人数
+      student_count: 22634
+      unit: 人
+
+  - id: library_entry_today
+    name: 今日图书馆进馆人数
+    description: 查询当天图书馆进馆总人数，可用于校园高频交互数据分析
+    keywords:
+      - 今日图书馆进馆人数
+      - 图书馆进馆
+      - 图书馆人数
+      - 进馆人数
+    method: GET
+    url:
+    timeout: 15
+    headers:
+    params:
+    result_path:
+    field_mapping:
+      metric_name: 指标名称
+      count: 人数
+      unit: 单位
+    raw_answer:
+      label_template: "{metric_name}"
+      value_field: count
+      unit_field: unit
+    mock_response:
+      metric_name: 今日图书馆进馆人数
+      count: 3187
+      unit: 人

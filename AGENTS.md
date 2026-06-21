@@ -120,6 +120,35 @@ docker logs -f ai-data-query-system
 
 Frontend `.vue` or `.ts` changes require a full Docker build because the running container serves compiled frontend assets from `frontend/dist`.
 
+## API Data Source
+
+API question answering is configured by YAML files under:
+
+```bash
+backend/templates/api_sources/
+```
+
+Documentation:
+
+```bash
+docs/API_DATA_SOURCE.md
+```
+
+In the chat input mode selector, choose `API问数`. The backend will match the user question against API `name`, `description`, and `keywords`, then call the API or use `mock_response`.
+
+For real school APIs, configure `url`, `method`, `headers`, `params`, and `result_path` in YAML. Secrets can be passed through environment variables, for example:
+
+```yaml
+headers:
+  Authorization: ${SCHOOL_API_TOKEN}
+```
+
+Docker run should then include:
+
+```bash
+-e SCHOOL_API_TOKEN="Bearer xxxxxx"
+```
+
 ## Common Issues
 
 ### Login Redirect After Rebuild
@@ -151,4 +180,3 @@ The server has an nginx container using host port `8001`, so do not map SQLBot t
 ### No Container Or No Image
 
 If `docker ps` shows no `ai-data-query-system` and `docker images` shows no image, rebuild from `/opt/ai-data-query-system` and then run the start command above.
-

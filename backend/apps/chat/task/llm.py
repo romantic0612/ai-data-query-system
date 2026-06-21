@@ -14,6 +14,7 @@ import pandas as pd
 import requests
 import sqlglot
 import sqlparse
+import yaml
 from langchain.chat_models.base import BaseChatModel
 from langchain_community.utilities import SQLDatabase
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, BaseMessageChunk
@@ -62,6 +63,7 @@ executor = ThreadPoolExecutor(max_workers=200)
 
 dynamic_ds_types = [1, 3]
 dynamic_subsql_prefix = 'select * from sqlbot_dynamic_temp_table_'
+api_sources_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'templates', 'api_sources'))
 
 session_maker = scoped_session(sessionmaker(bind=engine, class_=Session))
 
@@ -1241,6 +1243,167 @@ class LLMService:
                 err = traceback.format_exc(limit=1, chain=True)
                 raise SQLBotDBError(err)
 
+    @staticmethod
+    def _resolve_env_value(value: Any) -> Any:
+        if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
+            return os.environ.get(value[2:-1], "")
+        if isinstance(value, dict):
+            return {k: LLMService._resolve_env_value(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [LLMService._resolve_env_value(v) for v in value]
+        return value
+
+    @staticmethod
+    def load_api_sources() -> List[Dict[str, Any]]:
+        sources: List[Dict[str, Any]] = []
+        if not os.path.isdir(api_sources_path):
+            return sources
+        for file_name in os.listdir(api_sources_path):
+            if not file_name.endswith((".yaml", ".yml")):
+                continue
+            file_path = os.path.join(api_sources_path, file_name)
+            with open(file_path, encoding="utf-8") as f:
+                raw_config = yaml.safe_load(f) or {}
+            if isinstance(raw_config, list):
+                sources.extend(raw_config)
+            else:
+                sources.extend(raw_config.get("api_sources") or [])
+        return sources
+
+    def select_api_source(self, sources: List[Dict[str, Any]]) -> Dict[str, Any]:
+        question = (self.chat_question.question or "").lower()
+        best_source = None
+        best_score = 0
+        for source in sources:
+            score = 0
+            candidates = [source.get("name", ""), source.get("description", "")]
+            candidates.extend(source.get("keywords") or [])
+            for candidate in candidates:
+                text = str(candidate).lower().strip()
+                if text and text in question:
+                    score += max(2, len(text))
+            if score > best_score:
+                best_score = score
+                best_source = source
+        if best_source:
+            return best_source
+        raise SingleMessageError("未匹配到可用API数据源，请在 backend/templates/api_sources 配置接口关键词。")
+
+    @staticmethod
+    def extract_result_path(payload: Any, result_path: Optional[str]) -> Any:
+        if not result_path:
+            return payload
+        current = payload
+        for part in result_path.split("."):
+            if part == "":
+                continue
+            if isinstance(current, dict):
+                current = current.get(part)
+            else:
+                return current
+        return current
+
+    @staticmethod
+    def normalize_api_rows(payload: Any, result_path: Optional[str] = None) -> List[Dict[str, Any]]:
+        data = LLMService.extract_result_path(payload, result_path)
+        if isinstance(data, list):
+            return [item if isinstance(item, dict) else {"value": item} for item in data]
+        if isinstance(data, dict):
+            return [data]
+        return [{"value": data}]
+
+    @staticmethod
+    def build_api_raw_answer(source: Dict[str, Any], rows: List[Dict[str, Any]], fields: List[str]) -> Optional[str]:
+        if len(rows) != 1:
+            return None
+        config = source.get("raw_answer") or {}
+        row = rows[0]
+        if config:
+            value_field = config.get("value_field")
+            unit_field = config.get("unit_field")
+            label_template = config.get("label_template") or source.get("name") or "查询结果"
+            try:
+                label = label_template.format(**row)
+            except Exception:
+                label = source.get("name") or "查询结果"
+            value = row.get(value_field) if value_field else None
+            unit = row.get(unit_field) if unit_field else None
+            if value is not None:
+                display_value = f"{value:,}" if isinstance(value, int | float) else str(value)
+                return f"{label}：{display_value}{(' ' + str(unit)) if unit else ''}"
+        return LLMService.build_raw_answer(fields, rows)
+
+    def call_api_source(self, source: Dict[str, Any]) -> Dict[str, Any]:
+        if source.get("mock_response") is not None and not source.get("url"):
+            payload = source.get("mock_response")
+        else:
+            url = source.get("url")
+            if not url:
+                raise SingleMessageError(f"API数据源 {source.get('name')} 未配置 url 或 mock_response")
+            method = (source.get("method") or "GET").upper()
+            headers = self._resolve_env_value(source.get("headers") or {})
+            params = self._resolve_env_value(source.get("params") or {})
+            body = self._resolve_env_value(source.get("body") or {})
+            timeout = int(source.get("timeout") or 15)
+            response = requests.request(method, url, headers=headers, params=params,
+                                        json=body if method != "GET" else None, timeout=timeout)
+            response.raise_for_status()
+            payload = response.json()
+
+        rows = self.normalize_api_rows(payload, source.get("result_path"))
+        field_mapping = source.get("field_mapping") or {}
+        fields = list(rows[0].keys()) if rows else []
+        chart = {
+            "type": "table",
+            "title": source.get("name") or self.chat_question.question or "API查询结果",
+            "columns": [{"name": field_mapping.get(field, field), "value": str(field).lower()} for field in fields],
+            "axis": {},
+            "raw_answer": self.build_api_raw_answer(source, rows, fields),
+            "api_source": source.get("id") or source.get("name")
+        }
+        return {
+            "fields": fields,
+            "data": rows,
+            "api_source": {
+                "id": source.get("id"),
+                "name": source.get("name"),
+                "method": source.get("method"),
+                "url": source.get("url"),
+            },
+            "chart": chart,
+        }
+
+    def save_api_result(self, session: Session, api_result: Dict[str, Any]):
+        data_obj = {
+            "fields": api_result.get("fields") or [],
+            "data": prepare_for_orjson(api_result.get("data") or []),
+            "api_source": api_result.get("api_source"),
+        }
+        save_sql_exec_data(session=session, record_id=self.record.id,
+                           data=orjson.dumps(data_obj).decode())
+        chart = api_result.get("chart") or {}
+        save_chart(session=session, chart=orjson.dumps(chart).decode(), record_id=self.record.id)
+        return chart
+
+    def run_api_query_task(self, session: Session, in_chat: bool = True, stream: bool = True):
+        sources = self.load_api_sources()
+        if not sources:
+            raise SingleMessageError("未找到API数据源配置，请先在 backend/templates/api_sources 添加 YAML 配置。")
+        source = self.select_api_source(sources)
+        api_result = self.call_api_source(source)
+        chart = self.save_api_result(session, api_result)
+        if in_chat:
+            yield 'data:' + orjson.dumps({'content': 'execute-success', 'type': 'sql-data'}).decode() + '\n\n'
+            yield 'data:' + orjson.dumps(
+                {'content': orjson.dumps(chart).decode(), 'type': 'chart'}).decode() + '\n\n'
+            yield 'data:' + orjson.dumps({'type': 'finish'}).decode() + '\n\n'
+        else:
+            if stream:
+                yield chart.get("raw_answer") or orjson.dumps(api_result.get("data") or []).decode()
+            else:
+                yield {"success": True, "data": api_result.get("data"), "chart": chart}
+        self.finish(session)
+
     def pop_chunk(self):
         try:
             chunk = self.chunk_list.pop(0)
@@ -1306,7 +1469,12 @@ class LLMService:
             if not stream:
                 json_result['record_id'] = self.get_record().id
 
-                # select datasource if datasource is none
+            if self.chat_question.analysis_mode == 'api_query':
+                for chunk in self.run_api_query_task(_session, in_chat, stream):
+                    yield chunk
+                return
+
+            # select datasource if datasource is none
             if not self.ds:
                 ds_res = self.select_datasource(_session)
 

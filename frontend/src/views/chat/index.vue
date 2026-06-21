@@ -544,6 +544,7 @@ const analysisModeOptions = [
   { label: '数据预测', value: 'prediction' },
   { label: '报告生成', value: 'report' },
   { label: '数据需求', value: 'data_demand' },
+  { label: 'API问数', value: 'api_query' },
 ]
 
 const chatListRef = ref()

@@ -636,13 +636,11 @@ class LLMService:
         if self.current_assistant and self.current_assistant.type != 4:
             _ds_list = get_assistant_ds(session=_session, llm_service=self)
         else:
-            stmt = select(CoreDatasource).where(and_(CoreDatasource.oid == self.current_user.oid,
-                                                     CoreDatasource.type != "api"))
             _ds_list = []
-            for raw_ds in _session.exec(stmt):
-                ds = self.coerce_core_datasource(raw_ds)
-                if not ds:
-                    continue
+            query = _session.query(CoreDatasource).filter(
+                and_(CoreDatasource.oid == self.current_user.oid, CoreDatasource.type != "api")
+            )
+            for ds in query.all():
                 description = ds.description or ""
                 _ds_list.append({
                     "id": ds.id,
@@ -1270,13 +1268,10 @@ class LLMService:
     def load_api_sources(session: Optional[Session] = None, oid: Optional[int] = None) -> List[Dict[str, Any]]:
         sources: List[Dict[str, Any]] = []
         if session is not None:
-            stmt = select(CoreDatasource).where(CoreDatasource.type == "api")
+            query = session.query(CoreDatasource).filter(CoreDatasource.type == "api")
             if oid is not None:
-                stmt = stmt.where(CoreDatasource.oid == oid)
-            for raw_ds in session.exec(stmt).all():
-                ds = LLMService.coerce_core_datasource(raw_ds)
-                if not ds:
-                    continue
+                query = query.filter(CoreDatasource.oid == oid)
+            for ds in query.all():
                 try:
                     sources.extend(get_api_sources_from_ds(ds))
                 except Exception as e:

@@ -1560,6 +1560,24 @@ class LLMService:
                                        'engine_type': self.ds.type_name or self.ds.type,
                                        'type': 'datasource'}).decode() + '\n\n'
 
+    def clear_current_datasource_for_fallback(self, session: Session):
+        self.ds = None
+        chat = session.get(Chat, self.record.chat_id)
+        if chat:
+            chat.datasource = None
+            chat.engine_type = ''
+            session.add(chat)
+            session.commit()
+        if self.record:
+            record = session.get(ChatRecord, self.record.id)
+            if record:
+                record.datasource = None
+                record.engine_type = ''
+                session.add(record)
+                session.commit()
+            self.record.datasource = None
+            self.record.engine_type = ''
+
     def run_selected_api_source_task(self, session: Session, source: Dict[str, Any], in_chat: bool = True,
                                      stream: bool = True):
         api_result = self.call_api_source(source)
@@ -1787,9 +1805,30 @@ class LLMService:
                 self.validate_history_ds(_session)
 
             if self.is_api_datasource(self.ds):
-                for chunk in self.run_api_datasource_task(_session, in_chat, stream):
-                    yield chunk
-                return
+                api_sources = get_api_sources_from_ds(self.ds)
+                api_intent = None
+                api_source = self.try_select_api_source(api_sources)
+                if not api_source:
+                    api_intent = self.analyze_api_intent(api_sources)
+                    api_source = self.try_select_api_source(api_sources, api_intent)
+                if api_source:
+                    api_source = self.apply_question_params_to_api_source(api_source, api_intent)
+                    for chunk in self.run_selected_api_source_task(_session, api_source, in_chat, stream):
+                        yield chunk
+                    return
+
+                self.clear_current_datasource_for_fallback(_session)
+                ds_res = self.select_datasource(_session)
+                for chunk in ds_res:
+                    SQLBotLogUtil.info(chunk)
+                    if in_chat:
+                        yield 'data:' + orjson.dumps(
+                            {'content': chunk.get('content'), 'reasoning_content': chunk.get('reasoning_content'),
+                             'type': 'datasource-result'}).decode() + '\n\n'
+                if in_chat:
+                    yield 'data:' + orjson.dumps({'id': self.ds.id, 'datasource_name': self.ds.name,
+                                                  'engine_type': self.ds.type_name or self.ds.type,
+                                                  'type': 'datasource'}).decode() + '\n\n'
 
             # check connection
             connected = check_connection(ds=self.ds, trans=None)

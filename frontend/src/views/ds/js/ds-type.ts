@@ -8,6 +8,7 @@ import dm from '@/assets/datasource/icon_dm.png'
 import doris from '@/assets/datasource/icon_doris.png'
 import redshift from '@/assets/datasource/icon_redshift.png'
 import es from '@/assets/datasource/icon_es.png'
+import api from '@/assets/datasource/icon_es.png'
 import kingbase from '@/assets/datasource/icon_kingbase.png'
 import starrocks from '@/assets/datasource/icon_starrocks.png'
 import hive_icon from '@/assets/datasource/icon_hive.png'
@@ -25,6 +26,7 @@ export const dsType = [
   { label: 'Apache Doris', value: 'doris' },
   { label: 'AWS Redshift', value: 'redshift' },
   { label: 'Elasticsearch', value: 'es' },
+  { label: 'API', value: 'api' },
   { label: 'Kingbase', value: 'kingbase' },
   { label: 'StarRocks', value: 'starrocks' },
   { label: 'Apache Hive', value: 'hive' },
@@ -41,6 +43,7 @@ export const dsTypeWithImg = [
   { name: 'Apache Doris', type: 'doris', img: doris },
   { name: 'AWS Redshift', type: 'redshift', img: redshift },
   { name: 'Elasticsearch', type: 'es', img: es },
+  { name: 'API', type: 'api', img: api },
   { name: 'Kingbase', type: 'kingbase', img: kingbase },
   { name: 'StarRocks', type: 'starrocks', img: starrocks },
   { name: 'Apache Hive', type: 'hive', img: hive_icon },

@@ -39,7 +39,7 @@ from apps.chat.curd.chat import save_question, save_sql_answer, save_sql, \
 from apps.chat.models.chat_model import ChatQuestion, ChatRecord, Chat, RenameChat, ChatLog, OperationEnum, \
     ChatFinishStep, AxisObj, SystemPromptMessage, HumanPromptMessage, AIPromptMessage
 from apps.data_training.curd.data_training import get_training_template
-from apps.datasource.crud.datasource import get_table_schema, get_tables_sample_data
+from apps.datasource.crud.datasource import get_api_sources_from_ds, get_table_schema, get_tables_sample_data
 from apps.datasource.crud.permission import get_row_permission_filters, is_normal_user
 from apps.datasource.embedding.ds_embedding import get_ds_embedding
 from apps.datasource.models.datasource import CoreDatasource
@@ -160,7 +160,7 @@ class LLMService:
                 ds = session.get(CoreDatasource, chat.datasource)
                 if not ds:
                     raise SingleMessageError("No available datasource configuration found")
-                chat_question.engine = (ds.type_name if ds.type != 'excel' else 'PostgreSQL') + get_version(ds)
+                chat_question.engine = self.get_engine_label(ds)
 
         self.generate_sql_logs = list_generate_sql_logs(session=session, chart_id=chat_id)
         self.generate_chart_logs = list_generate_chart_logs(session=session, chart_id=chat_id)
@@ -196,6 +196,16 @@ class LLMService:
 </error-msg>'''
         else:
             self.chat_question.error_msg = ''
+
+    @staticmethod
+    def is_api_datasource(ds: Any) -> bool:
+        return bool(ds and getattr(ds, "type", "").lower() == "api")
+
+    @staticmethod
+    def get_engine_label(ds: Any) -> str:
+        if LLMService.is_api_datasource(ds):
+            return "API"
+        return (ds.type_name if ds.type != 'excel' else 'PostgreSQL') + get_version(ds)
 
     @classmethod
     async def create(cls, *args, **kwargs):
@@ -625,16 +635,27 @@ class LLMService:
         if self.current_assistant and self.current_assistant.type != 4:
             _ds_list = get_assistant_ds(session=_session, llm_service=self)
         else:
-            stmt = select(CoreDatasource.id, CoreDatasource.name, CoreDatasource.description).where(
-                and_(CoreDatasource.oid == self.current_user.oid))
-            _ds_list = [
-                {
+            stmt = select(CoreDatasource).where(and_(CoreDatasource.oid == self.current_user.oid))
+            _ds_list = []
+            for ds in _session.exec(stmt):
+                description = ds.description or ""
+                if self.is_api_datasource(ds):
+                    try:
+                        api_parts = []
+                        for source in get_api_sources_from_ds(ds):
+                            api_parts.append(" ".join([
+                                str(source.get("name") or ""),
+                                str(source.get("description") or ""),
+                                " ".join([str(item) for item in source.get("keywords") or []]),
+                            ]))
+                        description = f"{description} {' '.join(api_parts)}".strip()
+                    except Exception:
+                        pass
+                _ds_list.append({
                     "id": ds.id,
                     "name": ds.name,
-                    "description": ds.description
-                }
-                for ds in _session.exec(stmt)
-            ]
+                    "description": description
+                })
         if not _ds_list:
             raise SingleMessageError('No available datasource configuration found')
         ignore_auto_select = _ds_list and len(_ds_list) == 1
@@ -719,8 +740,7 @@ class LLMService:
                         _datasource = None
                         raise SingleMessageError(f"Datasource configuration with id {_datasource} not found")
                     self.ds = CoreDatasource(**_ds.model_dump())
-                    self.chat_question.engine = (_ds.type_name if _ds.type != 'excel' else 'PostgreSQL') + get_version(
-                        self.ds)
+                    self.chat_question.engine = self.get_engine_label(self.ds)
 
                     _engine_type = self.chat_question.engine
                     _chat.engine_type = _ds.type_name
@@ -1254,8 +1274,17 @@ class LLMService:
         return value
 
     @staticmethod
-    def load_api_sources() -> List[Dict[str, Any]]:
+    def load_api_sources(session: Optional[Session] = None, oid: Optional[int] = None) -> List[Dict[str, Any]]:
         sources: List[Dict[str, Any]] = []
+        if session is not None:
+            stmt = select(CoreDatasource).where(CoreDatasource.type == "api")
+            if oid is not None:
+                stmt = stmt.where(CoreDatasource.oid == oid)
+            for ds in session.exec(stmt).all():
+                try:
+                    sources.extend(get_api_sources_from_ds(ds))
+                except Exception as e:
+                    SQLBotLogUtil.error(f"load api datasource failed: {ds.id}, {e}")
         if not os.path.isdir(api_sources_path):
             return sources
         for file_name in os.listdir(api_sources_path):
@@ -1264,10 +1293,10 @@ class LLMService:
             file_path = os.path.join(api_sources_path, file_name)
             with open(file_path, encoding="utf-8") as f:
                 raw_config = yaml.safe_load(f) or {}
-            if isinstance(raw_config, list):
-                sources.extend(raw_config)
-            else:
-                sources.extend(raw_config.get("api_sources") or [])
+            file_sources = raw_config if isinstance(raw_config, list) else raw_config.get("api_sources") or []
+            for source in file_sources:
+                if isinstance(source, dict):
+                    sources.append({**source, "datasource_id": None, "datasource_name": "File API"})
         return sources
 
     def select_api_source(self, sources: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -1287,7 +1316,7 @@ class LLMService:
                 best_source = source
         if best_source:
             return best_source
-        raise SingleMessageError("未匹配到可用API数据源，请在 backend/templates/api_sources 配置接口关键词。")
+        raise SingleMessageError("未匹配到可用 API 接口，请检查后台 API 数据源的名称、描述和关键词。")
 
     @staticmethod
     def extract_result_path(payload: Any, result_path: Optional[str]) -> Any:
@@ -1356,7 +1385,7 @@ class LLMService:
         chart = {
             "type": "table",
             "title": source.get("name") or self.chat_question.question or "API查询结果",
-            "columns": [{"name": field_mapping.get(field, field), "value": str(field).lower()} for field in fields],
+            "columns": [{"name": field_mapping.get(field, field), "value": field} for field in fields],
             "axis": {},
             "raw_answer": self.build_api_raw_answer(source, rows, fields),
             "api_source": source.get("id") or source.get("name")
@@ -1385,10 +1414,11 @@ class LLMService:
         save_chart(session=session, chart=orjson.dumps(chart).decode(), record_id=self.record.id)
         return chart
 
-    def run_api_query_task(self, session: Session, in_chat: bool = True, stream: bool = True):
-        sources = self.load_api_sources()
+    def run_api_datasource_task(self, session: Session, in_chat: bool = True, stream: bool = True):
+        sources = get_api_sources_from_ds(self.ds) if self.is_api_datasource(self.ds) else self.load_api_sources(
+            session, self.current_user.oid)
         if not sources:
-            raise SingleMessageError("未找到API数据源配置，请先在 backend/templates/api_sources 添加 YAML 配置。")
+            raise SingleMessageError("未找到 API 数据源配置，请先在后台添加 API 类型数据源。")
         source = self.select_api_source(sources)
         api_result = self.call_api_source(source)
         chart = self.save_api_result(session, api_result)
@@ -1469,11 +1499,6 @@ class LLMService:
             if not stream:
                 json_result['record_id'] = self.get_record().id
 
-            if self.chat_question.analysis_mode == 'api_query':
-                for chunk in self.run_api_query_task(_session, in_chat, stream):
-                    yield chunk
-                return
-
             # select datasource if datasource is none
             if not self.ds:
                 ds_res = self.select_datasource(_session)
@@ -1491,6 +1516,11 @@ class LLMService:
 
             else:
                 self.validate_history_ds(_session)
+
+            if self.is_api_datasource(self.ds):
+                for chunk in self.run_api_datasource_task(_session, in_chat, stream):
+                    yield chunk
+                return
 
             # check connection
             connected = check_connection(ds=self.ds, trans=None)

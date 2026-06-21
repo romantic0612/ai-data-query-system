@@ -66,6 +66,17 @@
             </el-upload>
           </el-form-item>
         </div>
+        <div v-else-if="form.type === 'api'">
+          <el-form-item label="API 数据源配置 JSON" prop="apiConfigText">
+            <el-input
+              v-model="form.apiConfigText"
+              type="textarea"
+              :rows="16"
+              :spellcheck="false"
+              placeholder="请输入 API 数据源 JSON 配置"
+            />
+          </el-form-item>
+        </div>
         <div v-else>
           <el-form-item :label="t('ds.form.host')" prop="host">
             <el-input v-model="form.host" clearable />
@@ -194,6 +205,43 @@ const headers = ref<any>({ 'X-SQLBOT-TOKEN': `Bearer ${token}` })
 const dialogTitle = ref('')
 const getUploadURL = import.meta.env.VITE_API_BASE_URL + '/datasource/uploadExcel'
 const saveLoading = ref<boolean>(false)
+const defaultApiConfig = JSON.stringify(
+  {
+    api_sources: [
+      {
+        id: 'undergraduate_count',
+        name: '普通本科生人数',
+        description: '查询学校普通本科生人数统计',
+        keywords: ['普通本科生人数', '普通本科生', '本科生人数', '学生人数'],
+        method: 'GET',
+        url: '',
+        timeout: 15,
+        headers: {},
+        params: {},
+        result_path: '',
+        field_mapping: {
+          student_level: '学生类型',
+          metric_name: '指标名称',
+          student_count: '学生人数',
+          unit: '单位',
+        },
+        raw_answer: {
+          label_template: '{student_level}{metric_name}',
+          value_field: 'student_count',
+          unit_field: 'unit',
+        },
+        mock_response: {
+          student_level: '普通本科生',
+          metric_name: '人数',
+          student_count: 22634,
+          unit: '人',
+        },
+      },
+    ],
+  },
+  null,
+  2
+)
 
 const { t } = useI18n()
 
@@ -208,6 +256,7 @@ const rules = reactive<FormRules>({
   database: [{ required: true, message: 'Please input database', trigger: 'blur' }],
   mode: [{ required: true, message: 'Please choose mode', trigger: 'change' }],
   dbSchema: [{ required: true, message: 'Please input schema', trigger: 'blur' }],
+  apiConfigText: [{ required: true, message: '请输入 API 数据源配置', trigger: 'blur' }],
 })
 
 const dialogVisible = ref<boolean>(false)
@@ -228,6 +277,7 @@ const form = ref<any>({
   sheets: [],
   mode: 'service_name',
   timeout: 30,
+  apiConfigText: defaultApiConfig,
 })
 
 const close = () => {
@@ -253,6 +303,9 @@ const open = (item: any, editTable: boolean = false) => {
     form.value.configuration = item.configuration
     if (item.configuration) {
       const configuration = JSON.parse(decrypted(item.configuration))
+      if (item.type === 'api') {
+        form.value.apiConfigText = JSON.stringify(configuration, null, 2)
+      }
       form.value.host = configuration.host
       form.value.port = configuration.port
       form.value.username = configuration.username
@@ -323,6 +376,7 @@ const open = (item: any, editTable: boolean = false) => {
       sheets: [],
       mode: 'service_name',
       timeout: 30,
+      apiConfigText: defaultApiConfig,
     }
   }
   dialogVisible.value = true
@@ -368,6 +422,25 @@ const save = async (formEl: FormInstance | undefined) => {
 }
 
 const buildConf = () => {
+  if (form.value.type === 'api') {
+    const apiConfig = JSON.parse(form.value.apiConfigText || '{}')
+    form.value.configuration = encrypted(JSON.stringify(apiConfig))
+    const obj = JSON.parse(JSON.stringify(form.value))
+    delete obj.driver
+    delete obj.host
+    delete obj.port
+    delete obj.username
+    delete obj.password
+    delete obj.database
+    delete obj.extraJdbc
+    delete obj.dbSchema
+    delete obj.filename
+    delete obj.sheets
+    delete obj.mode
+    delete obj.timeout
+    delete obj.apiConfigText
+    return obj
+  }
   form.value.configuration = encrypted(
     JSON.stringify({
       host: form.value.host,
@@ -396,6 +469,7 @@ const buildConf = () => {
   delete obj.sheets
   delete obj.mode
   delete obj.timeout
+  delete obj.apiConfigText
   return obj
 }
 

@@ -122,11 +122,14 @@ Frontend `.vue` or `.ts` changes require a full Docker build because the running
 
 ## API Data Source
 
-API question answering is configured by YAML files under:
+API is a backend datasource type, not a chat mode. Users should not need to know whether data comes from MySQL or HTTP API.
 
-```bash
-backend/templates/api_sources/
-```
+In the admin datasource page, add a datasource with type `API`, then paste JSON configuration with an `api_sources` array. During chat:
+
+1. The normal datasource selector chooses the best datasource.
+2. If the selected datasource type is `api`, the backend skips SQL generation.
+3. The backend matches the question against API `name`, `description`, and `keywords`.
+4. It calls the API or uses `mock_response`, then returns a compact answer/table.
 
 Documentation:
 
@@ -134,9 +137,7 @@ Documentation:
 docs/API_DATA_SOURCE.md
 ```
 
-In the chat input mode selector, choose `API问数`. The backend will match the user question against API `name`, `description`, and `keywords`, then call the API or use `mock_response`.
-
-For real school APIs, configure `url`, `method`, `headers`, `params`, and `result_path` in YAML. Secrets can be passed through environment variables, for example:
+For real school APIs, configure `url`, `method`, `headers`, `params`, and `result_path` in datasource JSON. Secrets can be passed through environment variables, for example:
 
 ```yaml
 headers:

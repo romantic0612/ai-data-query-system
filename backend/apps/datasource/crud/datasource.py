@@ -40,6 +40,67 @@ def get_ds(session: SessionDep, id: int):
     return datasource
 
 
+def _load_datasource_json_config(ds: CoreDatasource) -> dict:
+    if not ds.configuration:
+        return {}
+    try:
+        return json.loads(aes_decrypt(ds.configuration))
+    except Exception:
+        return json.loads(ds.configuration)
+
+
+def get_api_sources_from_ds(ds: CoreDatasource) -> List[dict]:
+    config = _load_datasource_json_config(ds)
+    sources = config.get("api_sources") or config.get("endpoints") or []
+    if not sources and (config.get("url") or config.get("mock_response")):
+        sources = [config]
+    if not isinstance(sources, list) or len(sources) == 0:
+        raise HTTPException(status_code=500, detail="API data source requires api_sources configuration")
+
+    normalized = []
+    for index, source in enumerate(sources):
+        if not isinstance(source, dict):
+            continue
+        api_id = source.get("id") or source.get("name") or f"api_{index + 1}"
+        normalized_source = {
+            **source,
+            "id": str(api_id),
+            "name": source.get("name") or str(api_id),
+            "datasource_id": ds.id,
+            "datasource_name": ds.name,
+        }
+        normalized.append(normalized_source)
+    if not normalized:
+        raise HTTPException(status_code=500, detail="API data source has no valid endpoint")
+    return normalized
+
+
+def get_api_tables(ds: CoreDatasource) -> List[TableSchema]:
+    tables = []
+    for source in get_api_sources_from_ds(ds):
+        tables.append(TableSchema(source.get("id"), source.get("description") or source.get("name")))
+    return tables
+
+
+def get_api_fields(ds: CoreDatasource, table_name: str) -> List[ColumnSchema]:
+    source = next((item for item in get_api_sources_from_ds(ds) if item.get("id") == table_name), None)
+    if not source:
+        return []
+
+    field_mapping = source.get("field_mapping") or {}
+    field_names = list(field_mapping.keys())
+    mock_response = source.get("mock_response")
+    if not field_names and isinstance(mock_response, dict):
+        field_names = list(mock_response.keys())
+    if not field_names:
+        field_names = ["value"]
+
+    fields = []
+    for field in field_names:
+        fields.append(ColumnSchema(field, "string", field_mapping.get(field, field)))
+    return fields
+
+
 def check_status_by_id(session: SessionDep, trans: Trans, ds_id: int, is_raise: bool = False):
     ds = session.get(CoreDatasource, ds_id)
     if ds is None:
@@ -50,6 +111,9 @@ def check_status_by_id(session: SessionDep, trans: Trans, ds_id: int, is_raise: 
 
 
 def check_status(session: SessionDep, trans: Trans, ds: CoreDatasource, is_raise: bool = False):
+    if equals_ignore_case(ds.type, "api"):
+        get_api_sources_from_ds(ds)
+        return True
     return check_connection(trans, ds, is_raise)
 
 
@@ -76,7 +140,7 @@ async def create_ds(session: SessionDep, trans: Trans, user: CurrentUser, create
     ds.create_by = user.id
     ds.oid = user.oid if user.oid is not None else 1
     ds.status = "Success"
-    ds.type_name = DB.get_db(ds.type).db_name
+    ds.type_name = "API" if equals_ignore_case(ds.type, "api") else DB.get_db(ds.type).db_name
     record = CoreDatasource(**ds.model_dump())
     session.add(record)
     session.flush()
@@ -85,6 +149,13 @@ async def create_ds(session: SessionDep, trans: Trans, user: CurrentUser, create
     session.commit()
 
     # save tables and fields
+    if equals_ignore_case(ds.type, "api") and not create_ds.tables:
+        create_ds.tables = [
+            CoreTable(ds_id=ds.id, checked=True, table_name=table.tableName,
+                      table_comment=table.tableComment or table.tableName,
+                      custom_comment=table.tableComment or table.tableName)
+            for table in getTablesByDs(session, ds)
+        ]
     sync_table(session, ds, create_ds.tables)
     updateNum(session, ds)
     return ds
@@ -102,12 +173,24 @@ def update_ds(session: SessionDep, trans: Trans, user: CurrentUser, ds: CoreData
     check_name(session, trans, user, ds)
     # status = check_status(session, trans, ds)
     ds.status = "Success"
+    if equals_ignore_case(ds.type, "api"):
+        ds.type_name = "API"
     record = session.exec(select(CoreDatasource).where(CoreDatasource.id == ds.id)).first()
     update_data = ds.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(record, field, value)
     session.add(record)
     session.commit()
+
+    if equals_ignore_case(ds.type, "api"):
+        api_tables = [
+            CoreTable(ds_id=ds.id, checked=True, table_name=table.tableName,
+                      table_comment=table.tableComment or table.tableName,
+                      custom_comment=table.tableComment or table.tableName)
+            for table in getTablesByDs(session, ds)
+        ]
+        sync_table(session, ds, api_tables)
+        updateNum(session, ds)
 
     run_save_ds_embeddings([ds.id])
     return ds
@@ -144,23 +227,31 @@ async def delete_ds(session: SessionDep, id: int):
 
 def getTables(session: SessionDep, id: int):
     ds = session.exec(select(CoreDatasource).where(CoreDatasource.id == id)).first()
+    if equals_ignore_case(ds.type, "api"):
+        return get_api_tables(ds)
     tables = get_tables(ds)
     return tables
 
 
 def getTablesByDs(session: SessionDep, ds: CoreDatasource):
     # check_status(session, ds, True)
+    if equals_ignore_case(ds.type, "api"):
+        return get_api_tables(ds)
     tables = get_tables(ds)
     return tables
 
 
 def getFields(session: SessionDep, id: int, table_name: str):
     ds = session.exec(select(CoreDatasource).where(CoreDatasource.id == id)).first()
+    if equals_ignore_case(ds.type, "api"):
+        return get_api_fields(ds, table_name)
     fields = get_fields(ds, table_name)
     return fields
 
 
 def getFieldsByDs(session: SessionDep, ds: CoreDatasource, table_name: str):
+    if equals_ignore_case(ds.type, "api"):
+        return get_api_fields(ds, table_name)
     fields = get_fields(ds, table_name)
     return fields
 
@@ -387,6 +478,18 @@ def fieldEnum(session: SessionDep, id: int):
 
 
 def updateNum(session: SessionDep, ds: CoreDatasource):
+    if equals_ignore_case(ds.type, "api"):
+        all_tables = get_api_tables(ds)
+        selected_tables = get_tables_by_ds_id(session, ds.id)
+        num = f'{len(selected_tables)}/{len(all_tables)}'
+        record = session.exec(select(CoreDatasource).where(CoreDatasource.id == ds.id)).first()
+        update_data = ds.model_dump(exclude_unset=True)
+        for field, value in update_data.items():
+            setattr(record, field, value)
+        record.num = num
+        session.add(record)
+        session.commit()
+        return
     all_tables = get_tables(ds) if ds.type != 'excel' else json.loads(aes_decrypt(ds.configuration)).get('sheets')
     selected_tables = get_tables_by_ds_id(session, ds.id)
     num = f'{len(selected_tables)}/{len(all_tables)}'
@@ -405,8 +508,11 @@ def get_table_obj_by_ds(session: SessionDep, current_user: CurrentUser, ds: Core
     tables = session.query(CoreTable).filter(
         and_(CoreTable.ds_id == ds.id, CoreTable.checked == True)
     ).all()
-    conf = DatasourceConf(**json.loads(aes_decrypt(ds.configuration))) if ds.type != "excel" else get_engine_config()
-    schema = conf.dbSchema if conf.dbSchema is not None and conf.dbSchema != "" else conf.database
+    if equals_ignore_case(ds.type, "api"):
+        schema = ds.name or "API"
+    else:
+        conf = DatasourceConf(**json.loads(aes_decrypt(ds.configuration))) if ds.type != "excel" else get_engine_config()
+        schema = conf.dbSchema if conf.dbSchema is not None and conf.dbSchema != "" else conf.database
 
     # get all field
     table_ids = [table.id for table in tables]
@@ -490,6 +596,8 @@ def get_table_sample_data(ds: CoreDatasource, table_name: str, fields: list) -> 
 def get_tables_sample_data(session: SessionDep, current_user: CurrentUser, ds: CoreDatasource,
                            table_list: list[str] = None) -> str:
     """Get sample data (3 rows) for all tables to help AI understand the data"""
+    if equals_ignore_case(ds.type, "api"):
+        return ""
     table_objs = get_table_obj_by_ds(session=session, current_user=current_user, ds=ds)
     if len(table_objs) == 0:
         return ""

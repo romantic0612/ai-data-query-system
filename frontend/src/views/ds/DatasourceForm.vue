@@ -52,6 +52,43 @@ const saveLoading = ref<boolean>(false)
 const uploadLoading = ref(false)
 const { t } = useI18n()
 const schemaList = ref<any>([])
+const defaultApiConfig = JSON.stringify(
+  {
+    api_sources: [
+      {
+        id: 'undergraduate_count',
+        name: '普通本科生人数',
+        description: '查询学校普通本科生人数统计',
+        keywords: ['普通本科生人数', '普通本科生', '本科生人数', '学生人数'],
+        method: 'GET',
+        url: '',
+        timeout: 15,
+        headers: {},
+        params: {},
+        result_path: '',
+        field_mapping: {
+          student_level: '学生类型',
+          metric_name: '指标名称',
+          student_count: '学生人数',
+          unit: '单位',
+        },
+        raw_answer: {
+          label_template: '{student_level}{metric_name}',
+          value_field: 'student_count',
+          unit_field: 'unit',
+        },
+        mock_response: {
+          student_level: '普通本科生',
+          metric_name: '人数',
+          student_count: 22634,
+          unit: '人',
+        },
+      },
+    ],
+  },
+  null,
+  2
+)
 
 const rules = reactive<FormRules>({
   name: [
@@ -106,6 +143,13 @@ const rules = reactive<FormRules>({
       trigger: 'blur',
     },
   ],
+  apiConfigText: [
+    {
+      required: true,
+      message: '请输入 API 数据源配置',
+      trigger: 'blur',
+    },
+  ],
 })
 
 const dialogVisible = ref<boolean>(false)
@@ -128,6 +172,7 @@ const form = ref<any>({
   timeout: 30,
   lowVersion: false,
   ssl: false,
+  apiConfigText: defaultApiConfig,
 })
 
 const close = () => {
@@ -160,6 +205,9 @@ const initForm = (item: any, editTable: boolean = false) => {
     form.value.configuration = item.configuration
     if (item.configuration) {
       const configuration = JSON.parse(decrypted(item.configuration))
+      if (item.type === 'api') {
+        form.value.apiConfigText = JSON.stringify(configuration, null, 2)
+      }
       form.value.host = configuration.host
       form.value.port = configuration.port
       form.value.username = configuration.username
@@ -250,6 +298,7 @@ const initForm = (item: any, editTable: boolean = false) => {
       timeout: 30,
       lowVersion: false,
       ssl: false,
+      apiConfigText: defaultApiConfig,
     }
   }
   dialogVisible.value = true
@@ -324,6 +373,27 @@ const save = async (formEl: FormInstance | undefined) => {
 }
 
 const buildConf = () => {
+  if (form.value.type === 'api') {
+    const apiConfig = JSON.parse(form.value.apiConfigText || '{}')
+    form.value.configuration = encrypted(JSON.stringify(apiConfig))
+    const obj = JSON.parse(JSON.stringify(form.value))
+    delete obj.driver
+    delete obj.host
+    delete obj.port
+    delete obj.username
+    delete obj.password
+    delete obj.database
+    delete obj.extraJdbc
+    delete obj.dbSchema
+    delete obj.filename
+    delete obj.sheets
+    delete obj.mode
+    delete obj.timeout
+    delete obj.lowVersion
+    delete obj.ssl
+    delete obj.apiConfigText
+    return obj
+  }
   form.value.configuration = encrypted(
     JSON.stringify({
       host: form.value.host,
@@ -356,6 +426,7 @@ const buildConf = () => {
   delete obj.timeout
   delete obj.lowVersion
   delete obj.ssl
+  delete obj.apiConfigText
   return obj
 }
 
@@ -552,7 +623,7 @@ defineExpose({
   >
     <div v-if="isCreate && activeStep !== 2" class="model-name">
       {{ activeName }}
-      <span v-if="form.type !== 'excel'" style="margin-left: 8px; color: #8f959e; font-size: 12px">
+      <span v-if="form.type !== 'excel' && form.type !== 'api'" style="margin-left: 8px; color: #8f959e; font-size: 12px">
         <span>{{ t('ds.form.support_version') }}:&nbsp;</span>
         <span v-if="form.type === 'sqlServer'">2012+</span>
         <span v-else-if="form.type === 'oracle'">12+</span>
@@ -663,7 +734,18 @@ defineExpose({
             />
           </el-form-item>
         </div>
-        <div v-if="form.type !== 'excel' && form.type !== 'sqlite'" style="margin-top: 16px">
+        <div v-if="form.type === 'api'" style="margin-top: 16px">
+          <el-form-item label="API 数据源配置 JSON" prop="apiConfigText">
+            <el-input
+              v-model="form.apiConfigText"
+              type="textarea"
+              :rows="18"
+              :spellcheck="false"
+              placeholder="请输入 API 数据源 JSON 配置"
+            />
+          </el-form-item>
+        </div>
+        <div v-if="form.type !== 'excel' && form.type !== 'sqlite' && form.type !== 'api'" style="margin-top: 16px">
           <el-form-item
             :label="form.type !== 'es' ? t('ds.form.host') : t('ds.form.address')"
             prop="host"

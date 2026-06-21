@@ -1118,6 +1118,18 @@ class LLMService:
 
         return chart
 
+    def save_raw_table_chart(self, session: Session, result: Dict[str, Any]) -> Dict[str, Any]:
+        fields = result.get('fields') or []
+        title = self.get_record().question or '数据结果'
+        chart = {
+            'type': 'table',
+            'title': title[:50],
+            'columns': [{'name': field, 'value': str(field).lower()} for field in fields],
+            'axis': {}
+        }
+        save_chart(session=session, chart=orjson.dumps(chart).decode(), record_id=self.record.id)
+        return chart
+
     def check_save_predict_data(self, session: Session, res: str) -> bool:
 
         json_str = extract_nested_json(res)
@@ -1389,6 +1401,31 @@ class LLMService:
                 yield 'data:' + orjson.dumps({'content': 'execute-success', 'type': 'sql-data'}).decode() + '\n\n'
             if not stream:
                 json_result['data'] = get_chat_chart_data(_session, self.record.id)
+
+            if self.chat_question.analysis_mode == 'raw':
+                chart = self.save_raw_table_chart(_session, result)
+                if not stream:
+                    json_result['chart'] = chart
+                if in_chat:
+                    yield 'data:' + orjson.dumps(
+                        {'content': orjson.dumps(chart).decode(), 'type': 'chart'}).decode() + '\n\n'
+                    yield 'data:' + orjson.dumps({'type': 'finish'}).decode() + '\n\n'
+                else:
+                    if stream:
+                        _column_list = [AxisObj(name=field, value=field) for field in result.get('fields')]
+                        md_data, _fields_list = DataFormat.convert_object_array_for_pandas(_column_list,
+                                                                                           result.get('data'))
+                        if not _data or not _fields_list:
+                            yield 'The SQL execution result is empty.\n\n'
+                        else:
+                            df = pd.DataFrame(_data, columns=_fields_list)
+                            df_safe = DataFormat.safe_convert_to_string(df)
+                            markdown_table = df_safe.to_markdown(index=False)
+                            yield markdown_table + '\n\n'
+                    else:
+                        yield json_result
+                self.finish(_session)
+                return
 
             if finish_step.value <= ChatFinishStep.QUERY_DATA.value:
                 if stream:

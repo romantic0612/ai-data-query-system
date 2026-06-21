@@ -118,6 +118,7 @@ const chartRef = ref()
 const chartObject = computed<{
   type: ChartTypes
   title: string
+  raw_answer?: string
   axis: {
     x: { name: string; value: string }
     y: { name: string; value: string }
@@ -375,7 +376,7 @@ watch(
     "
     v-loading.fullscreen.lock="loading"
     class="chart-component-container"
-    :class="{ 'full-screen': enlarge }"
+    :class="{ 'full-screen': enlarge, compact: chartObject.raw_answer && !enlarge }"
   >
     <div class="header-bar">
       <div class="title">
@@ -529,7 +530,10 @@ watch(
     </div>
 
     <template v-if="message?.record?.chart">
-      <div class="chart-block">
+      <div v-if="chartObject.raw_answer && !enlarge" class="raw-answer-block">
+        {{ chartObject.raw_answer }}
+      </div>
+      <div v-else class="chart-block">
         <DisplayChartBlock
           :id="chartId"
           ref="chartRef"
@@ -825,6 +829,26 @@ watch(
     width: 100%;
 
     margin-top: 16px;
+  }
+
+  &.compact {
+    padding: 14px 16px;
+
+    .header-bar {
+      height: 28px;
+    }
+  }
+
+  .raw-answer-block {
+    margin-top: 10px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    background: rgba(248, 249, 250, 1);
+    color: rgba(31, 35, 41, 1);
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 28px;
+    word-break: break-word;
   }
   .over-limit-hint {
     min-height: 24px;

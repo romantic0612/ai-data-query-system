@@ -1121,14 +1121,68 @@ class LLMService:
     def save_raw_table_chart(self, session: Session, result: Dict[str, Any]) -> Dict[str, Any]:
         fields = result.get('fields') or []
         title = self.get_record().question or '数据结果'
+        data = result.get('data') or []
+        raw_answer = self.build_raw_answer(fields, data)
         chart = {
             'type': 'table',
             'title': title[:50],
             'columns': [{'name': field, 'value': str(field).lower()} for field in fields],
-            'axis': {}
+            'axis': {},
+            'raw_answer': raw_answer
         }
         save_chart(session=session, chart=orjson.dumps(chart).decode(), record_id=self.record.id)
         return chart
+
+    @staticmethod
+    def build_raw_answer(fields: List[str], data: List[Dict[str, Any]]) -> Optional[str]:
+        if len(data) != 1:
+            return None
+
+        row = data[0]
+        normalized = {str(key).lower(): value for key, value in row.items()}
+
+        metric_keys = ['metric_name', 'metric', 'name', '指标名称', '指标', '名称']
+        dimension_keys = ['student_level', 'type', 'category', '类型', '类别']
+        value_keys = [
+            'student_count', 'count', 'total', 'value', 'num', 'amount',
+            '人数', '数量', '总数', '值', '金额'
+        ]
+        unit_keys = ['unit', '单位']
+
+        def first_value(keys: List[str]):
+            for key in keys:
+                if key in normalized and normalized[key] not in (None, ''):
+                    return normalized[key]
+            return None
+
+        metric = first_value(metric_keys)
+        dimension = first_value(dimension_keys)
+        value = first_value(value_keys)
+        unit = first_value(unit_keys)
+
+        if value is None and len(fields) == 1:
+            value = row.get(fields[0])
+
+        if value is None:
+            return None
+
+        if dimension is not None and metric is not None:
+            label = f"{dimension}{metric}"
+        elif metric is not None:
+            label = str(metric)
+        elif dimension is not None:
+            label = str(dimension)
+        else:
+            label = fields[0] if len(fields) == 1 else '查询结果'
+
+        if isinstance(value, int | float):
+            display_value = f"{value:,}"
+        else:
+            display_value = str(value)
+
+        unit_text = f" {unit}" if unit else ""
+
+        return f"{label}：{display_value}{unit_text}"
 
     def check_save_predict_data(self, session: Session, res: str) -> bool:
 

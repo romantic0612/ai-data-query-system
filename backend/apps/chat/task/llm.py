@@ -1281,11 +1281,14 @@ class LLMService:
             stmt = select(CoreDatasource).where(CoreDatasource.type == "api")
             if oid is not None:
                 stmt = stmt.where(CoreDatasource.oid == oid)
-            for ds in session.exec(stmt).all():
+            for raw_ds in session.exec(stmt).all():
+                ds = LLMService.coerce_core_datasource(raw_ds)
+                if not ds:
+                    continue
                 try:
                     sources.extend(get_api_sources_from_ds(ds))
                 except Exception as e:
-                    SQLBotLogUtil.error(f"load api datasource failed: {ds.id}, {e}")
+                    SQLBotLogUtil.error(f"load api datasource failed: {getattr(ds, 'id', None)}, {e}")
         if not os.path.isdir(api_sources_path):
             return sources
         for file_name in os.listdir(api_sources_path):
@@ -1299,6 +1302,21 @@ class LLMService:
                 if isinstance(source, dict):
                     sources.append({**source, "datasource_id": None, "datasource_name": "File API"})
         return sources
+
+    @staticmethod
+    def coerce_core_datasource(raw_ds: Any) -> Optional[CoreDatasource]:
+        if isinstance(raw_ds, CoreDatasource):
+            return raw_ds
+        mapping = getattr(raw_ds, "_mapping", None)
+        if mapping:
+            for value in mapping.values():
+                if isinstance(value, CoreDatasource):
+                    return value
+        if isinstance(raw_ds, tuple):
+            for value in raw_ds:
+                if isinstance(value, CoreDatasource):
+                    return value
+        return None
 
     @staticmethod
     def _flatten_api_capability_terms(source: Dict[str, Any]) -> List[str]:

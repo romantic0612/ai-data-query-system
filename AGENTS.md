@@ -124,12 +124,12 @@ Frontend `.vue` or `.ts` changes require a full Docker build because the running
 
 API is a backend datasource type, not a chat mode. Users should not need to know whether data comes from MySQL or HTTP API.
 
-In the admin datasource page, add a datasource with type `API`, then paste JSON configuration with an `api_sources` array. During chat:
+In the admin datasource page, add a datasource with type `API`, then paste JSON configuration with an `api_sources` array. During chat, API capabilities are matched before database datasources:
 
-1. The normal datasource selector chooses the best datasource.
-2. If the selected datasource type is `api`, the backend skips SQL generation.
-3. The backend matches the question against API `name`, `description`, and `keywords`.
-4. It calls the API or uses `mock_response`, then returns a compact answer/table.
+1. The backend first matches the question against API `name`, `description`, `keywords`, `domain`, `intent`, `metrics`, and `dimensions`.
+2. If an API capability matches, the backend calls the API and skips SQL generation.
+3. If no API capability matches, the backend falls back to the normal datasource selector and SQL flow.
+4. Basic natural language parameter extraction is supported for `days`, such as `近7天`.
 
 Documentation:
 

@@ -1,16 +1,57 @@
 # API Data Source
 
-This project supports API as a backend datasource type. Users do not choose an "API question answering" mode. They ask questions normally, and the backend decides whether the selected datasource is a database or an API datasource.
+API is a backend datasource type. Users do not choose an API mode. They ask questions normally, and the backend routes the question.
 
-## How It Works
+The routing strategy is:
 
-1. Admin adds a datasource with type `API`.
-2. The datasource configuration stores one or more API endpoints in `api_sources`.
-3. During chat, SQLBot selects the most relevant datasource.
-4. If the datasource type is `api`, SQLBot skips SQL generation.
-5. SQLBot matches the question with API endpoint `name`, `description`, and `keywords`.
-6. SQLBot calls the matched HTTP API, or uses `mock_response` when `url` is empty.
-7. SQLBot normalizes the API result into `fields` and `data`, then returns a compact answer or table.
+1. Match API capabilities first.
+2. If an API capability matches, call the API directly.
+3. If no API capability matches, fall back to the original datasource selection and SQL query flow.
+4. If neither API nor database can answer, the system should later produce a data demand document.
+
+## Capability Catalog
+
+Each API endpoint is treated as one capability. A capability can include both natural language text and structured fields:
+
+```json
+{
+  "id": "library_entry_trend",
+  "name": "图书馆进馆趋势",
+  "description": "查询最近 N 天图书馆进馆人数趋势",
+  "domain": "library",
+  "intent": "trend_query",
+  "metrics": ["entry_count", "library_entry_count"],
+  "dimensions": ["date"],
+  "output": "trend",
+  "keywords": ["图书馆进馆趋势", "图书馆近七天", "进馆趋势"],
+  "method": "GET",
+  "url": "http://114.213.146.102:18500/api/library/entry-trend",
+  "params": {
+    "days": 7
+  },
+  "parameters": [
+    {
+      "name": "days",
+      "type": "integer",
+      "default": 7,
+      "description": "查询最近多少天"
+    }
+  ],
+  "result_path": "data"
+}
+```
+
+The current implementation uses these fields as a lightweight capability retrieval index. Later this can be upgraded to vector RAG.
+
+## Natural Language Parameters
+
+The first version supports simple `days` extraction:
+
+- `近7天图书馆进馆趋势`
+- `最近30天图书馆进馆人数`
+- `近七天图书馆情况`
+
+If the matched API capability has `params.days` or a parameter named `days`, the backend fills `days` from the question.
 
 ## Admin Configuration
 
@@ -23,6 +64,11 @@ Open datasource management, choose `API`, and paste JSON like this:
       "id": "undergraduate_count",
       "name": "普通本科生人数",
       "description": "查询学校普通本科生人数统计",
+      "domain": "student",
+      "intent": "single_metric_query",
+      "metrics": ["undergraduate_count", "student_count"],
+      "dimensions": ["student_level"],
+      "output": "single_value",
       "keywords": ["普通本科生人数", "普通本科生", "本科生人数", "学生人数"],
       "method": "GET",
       "url": "https://school.example.edu/api/students/undergraduate-count",
@@ -30,9 +76,7 @@ Open datasource management, choose `API`, and paste JSON like this:
       "headers": {
         "Authorization": "${SCHOOL_API_TOKEN}"
       },
-      "params": {
-        "campus": "main"
-      },
+      "params": {},
       "result_path": "data",
       "field_mapping": {
         "student_level": "学生类型",
@@ -68,50 +112,11 @@ Then start Docker with:
 -e SCHOOL_API_TOKEN="Bearer xxxxxx"
 ```
 
-## Mock API
-
-For demos, leave `url` empty and configure `mock_response`:
-
-```json
-{
-  "url": "",
-  "mock_response": {
-    "student_level": "普通本科生",
-    "metric_name": "人数",
-    "student_count": 22634,
-    "unit": "人"
-  }
-}
-```
-
-## Result Path
-
-If the API response is:
-
-```json
-{
-  "code": 0,
-  "data": {
-    "student_count": 22634,
-    "unit": "人"
-  }
-}
-```
-
-Set:
-
-```json
-{
-  "result_path": "data"
-}
-```
-
-If the API response directly returns the object or list, leave `result_path` empty.
-
 ## Current Version
 
 - API is now a datasource type in backend configuration.
-- Chat automatically switches to API execution when the selected datasource type is `api`.
-- Endpoint matching is keyword-based.
-- Complex natural-language parameter extraction is not yet implemented.
-- Multiple endpoints are supported in config, but permission, audit, and parameter forms should be improved later.
+- API capabilities are matched before database datasource selection.
+- Database and Excel datasources remain compatible fallback paths.
+- Endpoint matching is still rule/keyword based.
+- Basic `days` parameter extraction is supported.
+- Full vector RAG, permission audit, and complex parameter extraction are future work.

@@ -1,6 +1,7 @@
 import concurrent
 import json
 import os
+import re
 import traceback
 import urllib.parse
 import warnings
@@ -1299,7 +1300,44 @@ class LLMService:
                     sources.append({**source, "datasource_id": None, "datasource_name": "File API"})
         return sources
 
+    @staticmethod
+    def _flatten_api_capability_terms(source: Dict[str, Any]) -> List[str]:
+        terms: List[str] = [source.get("name", ""), source.get("description", "")]
+        terms.extend(source.get("keywords") or [])
+        for key in ["domain", "intent", "metric", "metrics", "dimension", "dimensions", "output"]:
+            value = source.get(key)
+            if isinstance(value, list):
+                terms.extend([str(item) for item in value])
+            elif value:
+                terms.append(str(value))
+        for parameter in source.get("parameters") or []:
+            if isinstance(parameter, dict):
+                terms.extend([str(parameter.get("name") or ""), str(parameter.get("description") or "")])
+        return terms
+
+    def score_api_source(self, source: Dict[str, Any]) -> int:
+        question = (self.chat_question.question or "").lower()
+        score = 0
+        for candidate in self._flatten_api_capability_terms(source):
+            text = str(candidate).lower().strip()
+            if text and text in question:
+                score += max(2, len(text))
+        return score
+
+    def try_select_api_source(self, sources: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        best_source = None
+        best_score = 0
+        for source in sources:
+            score = self.score_api_source(source)
+            if score > best_score:
+                best_score = score
+                best_source = source
+        return best_source if best_score > 0 else None
+
     def select_api_source(self, sources: List[Dict[str, Any]]) -> Dict[str, Any]:
+        capability_source = self.try_select_api_source(sources)
+        if capability_source:
+            return capability_source
         question = (self.chat_question.question or "").lower()
         best_source = None
         best_score = 0
@@ -1317,6 +1355,79 @@ class LLMService:
         if best_source:
             return best_source
         raise SingleMessageError("未匹配到可用 API 接口，请检查后台 API 数据源的名称、描述和关键词。")
+
+    @staticmethod
+    def extract_days_from_question(question: str) -> Optional[int]:
+        text = question or ""
+        digit_match = re.search(r"(?:近|最近|过去)?\s*(\d{1,2})\s*天", text)
+        if digit_match:
+            return max(1, min(30, int(digit_match.group(1))))
+        cn_numbers = {
+            "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
+            "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
+        }
+        cn_match = re.search(r"(?:近|最近|过去)?\s*([一二三四五六七八九十])\s*天", text)
+        if cn_match:
+            return cn_numbers.get(cn_match.group(1))
+        return None
+
+    def apply_question_params_to_api_source(self, source: Dict[str, Any]) -> Dict[str, Any]:
+        source = {**source}
+        params = {**(source.get("params") or {})}
+        days = self.extract_days_from_question(self.chat_question.question or "")
+        supports_days = (
+            "days" in params
+            or any(isinstance(item, dict) and item.get("name") == "days" for item in source.get("parameters") or [])
+        )
+        if days is not None and supports_days:
+            params["days"] = days
+        source["params"] = params
+        return source
+
+    def select_api_datasource_first(self, session: Session) -> Optional[Dict[str, Any]]:
+        sources = self.load_api_sources(session, self.current_user.oid)
+        source = self.try_select_api_source(sources)
+        if not source:
+            return None
+        datasource_id = source.get("datasource_id")
+        if datasource_id:
+            ds = session.get(CoreDatasource, datasource_id)
+            if ds:
+                self.ds = CoreDatasource(**ds.model_dump())
+                self.chat_question.engine = self.get_engine_label(self.ds)
+                chat = session.get(Chat, self.record.chat_id)
+                if chat and not chat.datasource:
+                    chat.datasource = self.ds.id
+                    chat.engine_type = self.ds.type_name or self.ds.type
+                    session.add(chat)
+                    session.commit()
+        return self.apply_question_params_to_api_source(source)
+
+    def emit_datasource_selected(self, in_chat: bool) -> Optional[str]:
+        if not in_chat or not self.ds:
+            return None
+        return 'data:' + orjson.dumps({'id': self.ds.id, 'datasource_name': self.ds.name,
+                                       'engine_type': self.ds.type_name or self.ds.type,
+                                       'type': 'datasource'}).decode() + '\n\n'
+
+    def run_selected_api_source_task(self, session: Session, source: Dict[str, Any], in_chat: bool = True,
+                                     stream: bool = True):
+        api_result = self.call_api_source(source)
+        chart = self.save_api_result(session, api_result)
+        if in_chat:
+            datasource_chunk = self.emit_datasource_selected(in_chat)
+            if datasource_chunk:
+                yield datasource_chunk
+            yield 'data:' + orjson.dumps({'content': 'execute-success', 'type': 'sql-data'}).decode() + '\n\n'
+            yield 'data:' + orjson.dumps(
+                {'content': orjson.dumps(chart).decode(), 'type': 'chart'}).decode() + '\n\n'
+            yield 'data:' + orjson.dumps({'type': 'finish'}).decode() + '\n\n'
+        else:
+            if stream:
+                yield chart.get("raw_answer") or orjson.dumps(api_result.get("data") or []).decode()
+            else:
+                yield {"success": True, "data": api_result.get("data"), "chart": chart}
+        self.finish(session)
 
     @staticmethod
     def extract_result_path(payload: Any, result_path: Optional[str]) -> Any:
@@ -1498,6 +1609,14 @@ class LLMService:
                     yield '> ' + self.get_record().question + '\n\n'
             if not stream:
                 json_result['record_id'] = self.get_record().id
+
+            api_source = None
+            if not self.ds:
+                api_source = self.select_api_datasource_first(_session)
+                if api_source:
+                    for chunk in self.run_selected_api_source_task(_session, api_source, in_chat, stream):
+                        yield chunk
+                    return
 
             # select datasource if datasource is none
             if not self.ds:

@@ -377,7 +377,7 @@
         </el-scrollbar>
       </el-main>
       <el-footer
-        v-if="computedMessages.length > 0 || (!isCompletePage && !selectAssistantDs)"
+        v-if="computedMessages.length > 0 || isCompletePage || (!isCompletePage && !selectAssistantDs)"
         class="chat-footer"
       >
         <div class="input-wrapper" @click="clickInput">
@@ -694,6 +694,10 @@ const createNewChat = async () => {
     currentChatId.value = undefined
     return
   }
+  if (isCompletePage.value && !selectAssistantDs.value) {
+    hiddenChatCreatorRef.value?.createChat()
+    return
+  }
   chatCreatorRef.value?.showDs()
 }
 
@@ -819,6 +823,16 @@ function onChatStop() {
 }
 const assistantPrepareSend = async () => {
   if (
+    isCompletePage.value &&
+    !selectAssistantDs.value &&
+    (currentChatId.value == null || typeof currentChatId.value == 'undefined')
+  ) {
+    await hiddenChatCreatorRef.value?.createChat()
+    if (currentChatId.value == null || typeof currentChatId.value == 'undefined') {
+      return false
+    }
+  }
+  if (
     !isCompletePage.value &&
     !selectAssistantDs.value &&
     (currentChatId.value == null || typeof currentChatId.value == 'undefined')
@@ -828,6 +842,7 @@ const assistantPrepareSend = async () => {
       onChatCreatedQuick(assistantChat as any)
     }
   }
+  return true
 }
 const sendMessage = async (
   regenerate_record_id: number | undefined = undefined,
@@ -846,7 +861,12 @@ const sendMessage = async (
       scrollBottom()
     }, 300)
   }
-  await assistantPrepareSend()
+  const prepared = await assistantPrepareSend()
+  if (!prepared) {
+    loading.value = false
+    isTyping.value = false
+    return
+  }
   const currentRecord = new ChatRecord()
   currentRecord.create_time = new Date()
   currentRecord.chat_id = currentChatId.value

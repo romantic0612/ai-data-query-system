@@ -101,24 +101,28 @@ function confirmSelectDs() {
   }
 }
 
-function createChat(datasource: number) {
+function createChat(datasource?: number) {
   loading.value = true
-  const param = {
-    datasource: datasource,
-  } as any
+  const param = {} as any
+  if (datasource !== undefined) {
+    param.datasource = datasource
+  }
   let method = chatApi.startChat
   if (assistantStore.getAssistant) {
     param['origin'] = 2
     method = chatApi.startAssistantChat
   }
-  method(param)
+  return method(param)
     .then((res) => {
       const chat: ChatInfo | undefined = chatApi.toChatInfo(res)
       if (chat == undefined) {
         throw Error('chat is undefined')
       }
       emits('onChatCreated', chat)
-      hideDs()
+      if (datasource !== undefined) {
+        hideDs()
+      }
+      return chat
     })
     .catch((e) => {
       console.error(e)

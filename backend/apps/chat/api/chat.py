@@ -183,7 +183,6 @@ async def delete(session: SessionDep, current_user: CurrentUser, chart_id: int, 
 
 
 @router.post("/start", response_model=ChatInfo, summary=f"{PLACEHOLDER_PREFIX}start_chat")
-@require_permissions(permission=SqlbotPermission(type='ds', keyExpression="create_chat_obj.datasource"))
 @system_log(LogConfig(
     operation_type=OperationType.CREATE,
     module=OperationModules.CHAT,

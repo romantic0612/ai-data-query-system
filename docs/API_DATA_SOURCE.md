@@ -41,17 +41,17 @@ Each API endpoint is treated as one capability. A capability can include both na
 }
 ```
 
-The current implementation uses these fields as a lightweight capability retrieval index. Later this can be upgraded to vector RAG.
+The current implementation uses the system default model to parse the user question into structured intent JSON, then combines that result with rule scoring. If model parsing fails, it falls back to rule/keyword matching.
 
 ## Natural Language Parameters
 
-The first version supports simple `days` extraction:
+The first version supports model-driven parameter extraction plus a rule fallback for `days`:
 
 - `近7天图书馆进馆趋势`
 - `最近30天图书馆进馆人数`
 - `近七天图书馆情况`
 
-If the matched API capability has `params.days` or a parameter named `days`, the backend fills `days` from the question.
+If the matched API capability has `params.days` or a parameter named `days`, the backend fills `days` from the question or from the model's structured JSON.
 
 ## Admin Configuration
 
@@ -117,6 +117,6 @@ Then start Docker with:
 - API is now a datasource type in backend configuration.
 - API capabilities are matched before database datasource selection.
 - Database and Excel datasources remain compatible fallback paths.
-- Endpoint matching is still rule/keyword based.
-- Basic `days` parameter extraction is supported.
+- Endpoint matching uses model-parsed intent plus rule/keyword fallback.
+- Basic `days` parameter extraction is supported by model output and rule fallback.
 - Full vector RAG, permission audit, and complex parameter extraction are future work.

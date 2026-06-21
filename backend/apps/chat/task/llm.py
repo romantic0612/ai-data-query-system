@@ -1320,20 +1320,110 @@ class LLMService:
                 terms.extend([str(parameter.get("name") or ""), str(parameter.get("description") or "")])
         return terms
 
-    def score_api_source(self, source: Dict[str, Any]) -> int:
+    @staticmethod
+    def _as_list(value: Any) -> List[str]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [str(item).lower().strip() for item in value if str(item).strip()]
+        return [str(value).lower().strip()] if str(value).strip() else []
+
+    def analyze_api_intent(self, sources: List[Dict[str, Any]]) -> Dict[str, Any]:
+        if not sources:
+            return {}
+        capabilities = []
+        for source in sources[:30]:
+            capabilities.append({
+                "id": source.get("id"),
+                "name": source.get("name"),
+                "description": source.get("description"),
+                "domain": source.get("domain"),
+                "intent": source.get("intent"),
+                "metrics": source.get("metrics") or source.get("metric"),
+                "dimensions": source.get("dimensions") or source.get("dimension"),
+                "output": source.get("output"),
+                "keywords": source.get("keywords"),
+                "parameters": [
+                    {
+                        "name": item.get("name"),
+                        "type": item.get("type"),
+                        "description": item.get("description"),
+                    }
+                    for item in source.get("parameters") or []
+                    if isinstance(item, dict)
+                ],
+            })
+        system_prompt = (
+            "You are an intent parser for a campus data query system. "
+            "Return only one JSON object. Do not explain. "
+            "Use the provided API capability catalog to infer the user's intent and parameters. "
+            "If unsure, use null or empty arrays."
+        )
+        user_prompt = (
+            "User question:\n"
+            f"{self.chat_question.question}\n\n"
+            "API capability catalog:\n"
+            f"{orjson.dumps(capabilities).decode()}\n\n"
+            "Return JSON with this schema:\n"
+            "{"
+            "\"capability_id\": string|null,"
+            "\"intent\": string|null,"
+            "\"domain\": string|null,"
+            "\"metrics\": string[],"
+            "\"dimensions\": string[],"
+            "\"output\": string|null,"
+            "\"params\": object,"
+            "\"query_terms\": string[]"
+            "}"
+        )
+        try:
+            result = self.llm.invoke([SystemPromptMessage(system_prompt), HumanMessage(user_prompt)])
+            content = getattr(result, "content", result)
+            if isinstance(content, list):
+                content = "".join([str(item.get("text", item)) if isinstance(item, dict) else str(item)
+                                   for item in content])
+            json_str = extract_nested_json(str(content))
+            if not json_str:
+                return {}
+            parsed = orjson.loads(json_str)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception as e:
+            SQLBotLogUtil.error(f"api intent parse failed: {e}")
+            return {}
+
+    def score_api_source(self, source: Dict[str, Any], intent: Optional[Dict[str, Any]] = None) -> int:
         question = (self.chat_question.question or "").lower()
         score = 0
         for candidate in self._flatten_api_capability_terms(source):
             text = str(candidate).lower().strip()
             if text and text in question:
                 score += max(2, len(text))
+        if intent:
+            if intent.get("capability_id") and str(intent.get("capability_id")) == str(source.get("id")):
+                score += 100
+            for key, weight in [("domain", 25), ("intent", 25), ("output", 15)]:
+                if intent.get(key) and source.get(key) and str(intent.get(key)).lower() == str(source.get(key)).lower():
+                    score += weight
+            source_metrics = set(self._as_list(source.get("metrics") or source.get("metric")))
+            intent_metrics = set(self._as_list(intent.get("metrics") or intent.get("metric")))
+            source_dimensions = set(self._as_list(source.get("dimensions") or source.get("dimension")))
+            intent_dimensions = set(self._as_list(intent.get("dimensions") or intent.get("dimension")))
+            score += len(source_metrics.intersection(intent_metrics)) * 20
+            score += len(source_dimensions.intersection(intent_dimensions)) * 10
+            for term in self._as_list(intent.get("query_terms")):
+                for candidate in self._flatten_api_capability_terms(source):
+                    text = str(candidate).lower().strip()
+                    if term and text and (term in text or text in term):
+                        score += 5
+                        break
         return score
 
-    def try_select_api_source(self, sources: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    def try_select_api_source(self, sources: List[Dict[str, Any]],
+                              intent: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         best_source = None
         best_score = 0
         for source in sources:
-            score = self.score_api_source(source)
+            score = self.score_api_source(source, intent)
             if score > best_score:
                 best_score = score
                 best_source = source
@@ -1389,9 +1479,52 @@ class LLMService:
         source["params"] = params
         return source
 
+    @staticmethod
+    def extract_days_from_question(question: str) -> Optional[int]:
+        text = question or ""
+        digit_match = re.search(r"(?:\u8fd1|\u6700\u8fd1|\u8fc7\u53bb)?\s*(\d{1,2})\s*\u5929", text)
+        if digit_match:
+            return max(1, min(30, int(digit_match.group(1))))
+        cn_numbers = {
+            "\u4e00": 1, "\u4e8c": 2, "\u4e09": 3, "\u56db": 4, "\u4e94": 5,
+            "\u516d": 6, "\u4e03": 7, "\u516b": 8, "\u4e5d": 9, "\u5341": 10,
+        }
+        cn_match = re.search(
+            r"(?:\u8fd1|\u6700\u8fd1|\u8fc7\u53bb)?\s*([\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341])\s*\u5929",
+            text)
+        if cn_match:
+            return cn_numbers.get(cn_match.group(1))
+        return None
+
+    def apply_question_params_to_api_source(self, source: Dict[str, Any],
+                                            intent: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        source = {**source}
+        params = {**(source.get("params") or {})}
+        intent_params = (intent or {}).get("params") or {}
+        if isinstance(intent_params, dict):
+            for key, value in intent_params.items():
+                if value is not None and value != "":
+                    params[key] = value
+        days = self.extract_days_from_question(self.chat_question.question or "")
+        if days is None and isinstance(intent_params, dict):
+            raw_days = intent_params.get("days")
+            if isinstance(raw_days, int):
+                days = raw_days
+            elif isinstance(raw_days, str) and raw_days.isdigit():
+                days = int(raw_days)
+        supports_days = (
+            "days" in params
+            or any(isinstance(item, dict) and item.get("name") == "days" for item in source.get("parameters") or [])
+        )
+        if days is not None and supports_days:
+            params["days"] = max(1, min(30, int(days)))
+        source["params"] = params
+        return source
+
     def select_api_datasource_first(self, session: Session) -> Optional[Dict[str, Any]]:
         sources = self.load_api_sources(session, self.current_user.oid)
-        source = self.try_select_api_source(sources)
+        intent = self.analyze_api_intent(sources)
+        source = self.try_select_api_source(sources, intent)
         if not source:
             return None
         datasource_id = source.get("datasource_id")
@@ -1415,7 +1548,7 @@ class LLMService:
                         session.commit()
                     self.record.datasource = self.ds.id
                     self.record.engine_type = self.ds.type_name or self.ds.type
-        return self.apply_question_params_to_api_source(source)
+        return self.apply_question_params_to_api_source(source, intent)
 
     def emit_datasource_selected(self, in_chat: bool) -> Optional[str]:
         if not in_chat or not self.ds:

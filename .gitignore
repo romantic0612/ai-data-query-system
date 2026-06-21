@@ -192,3 +192,7 @@ test.py
 !/.venv/
 
 sqlbot-xpack
+
+# Campus business demo runtime files
+campus-business-system/data/
+campus-business-system/app/__pycache__/

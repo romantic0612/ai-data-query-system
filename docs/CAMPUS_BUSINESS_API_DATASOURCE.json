@@ -1,0 +1,96 @@
+{
+  "api_sources": [
+    {
+      "id": "undergraduate_count",
+      "name": "普通本科生人数",
+      "description": "查询学校普通本科生人数统计",
+      "keywords": ["普通本科生人数", "普通本科生", "本科生人数", "学生人数"],
+      "method": "GET",
+      "url": "http://114.213.146.102:18500/api/students/undergraduate-count",
+      "timeout": 15,
+      "headers": {},
+      "params": {},
+      "result_path": "data",
+      "field_mapping": {
+        "student_level": "学生类型",
+        "metric_name": "指标名称",
+        "student_count": "学生人数",
+        "unit": "单位"
+      },
+      "raw_answer": {
+        "label_template": "{student_level}{metric_name}",
+        "value_field": "student_count",
+        "unit_field": "unit"
+      }
+    },
+    {
+      "id": "library_entry_today",
+      "name": "今日图书馆进馆人数",
+      "description": "查询当天图书馆进馆总人数和高峰时段",
+      "keywords": ["今日图书馆进馆人数", "图书馆进馆", "图书馆人数", "进馆人数"],
+      "method": "GET",
+      "url": "http://114.213.146.102:18500/api/library/entry-today",
+      "timeout": 15,
+      "headers": {},
+      "params": {},
+      "result_path": "data",
+      "field_mapping": {
+        "stat_date": "统计日期",
+        "metric_name": "指标名称",
+        "entry_count": "进馆人数",
+        "peak_hour": "高峰时段",
+        "unit": "单位"
+      },
+      "raw_answer": {
+        "label_template": "{metric_name}",
+        "value_field": "entry_count",
+        "unit_field": "unit"
+      }
+    },
+    {
+      "id": "canteen_consume_today",
+      "name": "今日食堂消费",
+      "description": "查询当天食堂消费金额、消费次数和最忙食堂",
+      "keywords": ["今日食堂消费", "食堂消费金额", "食堂消费次数", "食堂消费"],
+      "method": "GET",
+      "url": "http://114.213.146.102:18500/api/canteen/consume-today",
+      "timeout": 15,
+      "headers": {},
+      "params": {},
+      "result_path": "data",
+      "field_mapping": {
+        "stat_date": "统计日期",
+        "metric_name": "指标名称",
+        "consume_amount": "消费金额",
+        "consume_count": "消费次数",
+        "busiest_canteen": "最忙食堂",
+        "unit": "单位"
+      },
+      "raw_answer": {
+        "label_template": "{metric_name}",
+        "value_field": "consume_amount",
+        "unit_field": "unit"
+      }
+    },
+    {
+      "id": "student_leave_return_summary",
+      "name": "学生离返校概况",
+      "description": "查询当天学生离校、返校和未返校人数",
+      "keywords": ["学生离返校", "离校人数", "返校人数", "未返校人数", "离返校概况"],
+      "method": "GET",
+      "url": "http://114.213.146.102:18500/api/students/leave-return-summary",
+      "timeout": 15,
+      "headers": {},
+      "params": {},
+      "result_path": "data",
+      "field_mapping": {
+        "stat_date": "统计日期",
+        "metric_name": "指标名称",
+        "leave_count": "离校人数",
+        "return_count": "返校人数",
+        "not_return_count": "未返校人数",
+        "unit": "单位"
+      }
+    }
+  ]
+}

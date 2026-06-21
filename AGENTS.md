@@ -150,6 +150,54 @@ Docker run should then include:
 -e SCHOOL_API_TOKEN="Bearer xxxxxx"
 ```
 
+## Campus Business System Demo
+
+This repository also contains a small demo business system:
+
+```bash
+campus-business-system/
+```
+
+It exposes campus APIs for student population, library entries, canteen consumption, and student leave/return data. Run it as a separate container:
+
+```bash
+cd /opt/ai-data-query-system
+git pull
+cd /opt/ai-data-query-system/campus-business-system
+docker build -t campus-business-system:latest .
+docker stop campus-business-system 2>/dev/null || true
+docker rm campus-business-system 2>/dev/null || true
+docker run -d \
+  --name campus-business-system \
+  --restart unless-stopped \
+  -p 18500:8500 \
+  -v /opt/ai-data-query-system/campus-business-system/data:/app/data \
+  campus-business-system:latest
+```
+
+Check it:
+
+```bash
+docker ps | grep campus-business-system
+curl http://127.0.0.1:18500/health
+curl http://127.0.0.1:18500/api/students/undergraduate-count
+```
+
+In the AI data query system, add an `API` datasource and paste:
+
+```bash
+docs/CAMPUS_BUSINESS_API_DATASOURCE.json
+```
+
+Then ask:
+
+```text
+普通本科生人数是多少
+今日图书馆进馆人数是多少
+今日食堂消费金额是多少
+学生离返校情况
+```
+
 ## Common Issues
 
 ### Login Redirect After Rebuild

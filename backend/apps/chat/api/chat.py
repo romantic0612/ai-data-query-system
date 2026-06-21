@@ -190,7 +190,8 @@ async def delete(session: SessionDep, current_user: CurrentUser, chart_id: int, 
 ))
 async def start_chat(session: SessionDep, current_user: CurrentUser, create_chat_obj: CreateChat):
     try:
-        return create_chat(session, current_user, create_chat_obj)
+        return create_chat(session, current_user, create_chat_obj,
+                           require_datasource=bool(create_chat_obj and create_chat_obj.datasource))
     except Exception as e:
         raise HTTPException(
             status_code=500,

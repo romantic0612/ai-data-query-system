@@ -1401,6 +1401,15 @@ class LLMService:
                     chat.engine_type = self.ds.type_name or self.ds.type
                     session.add(chat)
                     session.commit()
+                if self.record:
+                    record = session.get(ChatRecord, self.record.id)
+                    if record:
+                        record.datasource = self.ds.id
+                        record.engine_type = self.ds.type_name or self.ds.type
+                        session.add(record)
+                        session.commit()
+                    self.record.datasource = self.ds.id
+                    self.record.engine_type = self.ds.type_name or self.ds.type
         return self.apply_question_params_to_api_source(source)
 
     def emit_datasource_selected(self, in_chat: bool) -> Optional[str]:

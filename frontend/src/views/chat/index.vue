@@ -821,13 +821,21 @@ function onChatStop() {
   isTyping.value = false
   console.debug('onChatStop')
 }
-const assistantPrepareSend = async () => {
+const assistantPrepareSend = async (question?: string) => {
   if (
     isCompletePage.value &&
     !selectAssistantDs.value &&
     (currentChatId.value == null || typeof currentChatId.value == 'undefined')
   ) {
-    await hiddenChatCreatorRef.value?.createChat()
+    try {
+      const res = await chatApi.startChat({ question })
+      const chat = chatApi.toChatInfo(res)
+      if (chat) {
+        onChatCreatedQuick(chat)
+      }
+    } catch (e) {
+      console.error(e)
+    }
     if (currentChatId.value == null || typeof currentChatId.value == 'undefined') {
       return false
     }
@@ -861,7 +869,7 @@ const sendMessage = async (
       scrollBottom()
     }, 300)
   }
-  const prepared = await assistantPrepareSend()
+  const prepared = await assistantPrepareSend(inputMessage.value)
   if (!prepared) {
     loading.value = false
     isTyping.value = false

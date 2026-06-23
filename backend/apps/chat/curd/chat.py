@@ -1,4 +1,5 @@
 import datetime
+import re
 from decimal import Decimal
 from typing import List, Optional, Union, Dict, Any
 
@@ -45,6 +46,28 @@ def list_chats(session: SessionDep, current_user: CurrentUser) -> List[Chat]:
     oid = current_user.oid if current_user.oid is not None else 1
     chart_list = session.query(Chat).filter(and_(Chat.create_by == current_user.id, Chat.oid == oid)).order_by(
         Chat.create_time.desc()).all()
+    time_title_pattern = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
+    for chat in chart_list:
+        if chat.brief and not time_title_pattern.match(chat.brief):
+            continue
+        latest_question = (
+            session.query(ChatRecord.question)
+            .filter(
+                and_(
+                    ChatRecord.chat_id == chat.id,
+                    ChatRecord.create_by == current_user.id,
+                    ChatRecord.question.isnot(None),
+                    ChatRecord.question != '',
+                    ChatRecord.first_chat == False,
+                )
+            )
+            .order_by(ChatRecord.create_time.desc())
+            .first()
+        )
+        if latest_question and latest_question[0]:
+            chat.brief = latest_question[0].strip()[:20]
+        elif chat.brief and time_title_pattern.match(chat.brief):
+            chat.brief = "新对话"
     return chart_list
 
 
@@ -704,7 +727,7 @@ def create_chat(session: SessionDep, current_user: CurrentUser, create_chat_obj:
         raise Exception("Datasource cannot be None")
 
     if not create_chat_obj.question or create_chat_obj.question.strip() == '':
-        create_chat_obj.question = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        create_chat_obj.question = "新对话"
 
     chat = Chat(create_time=datetime.datetime.now(),
                 create_by=current_user.id,

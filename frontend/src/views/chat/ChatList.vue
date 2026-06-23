@@ -103,6 +103,15 @@ function onClickHistory(chat: Chat) {
   emits('chatSelected', chat)
 }
 
+function chatTitle(chat: Chat) {
+  return chat.brief || t('qa.conversation_title')
+}
+
+function chatTime(chat: Chat) {
+  const time = getDate(chat.create_time)
+  return time ? dayjs(time).format('YYYY-MM-DD HH:mm') : ''
+}
+
 function handleCommand(command: string | number | object, chat: Chat) {
   if (chat && chat.id !== undefined) {
     switch (command) {
@@ -218,7 +227,10 @@ const handleConfirmPassword = () => {
             :class="{ active: currentChatId === chat.id, hide: !expandMap[group.key] }"
             @click="onClickHistory(chat)"
           >
-            <span class="title">{{ chat.brief ?? 'Untitled' }}</span>
+            <span class="title-wrap">
+              <span class="title">{{ chatTitle(chat) }}</span>
+              <span v-if="chatTime(chat)" class="time">{{ chatTime(chat) }}</span>
+            </span>
             <el-popover :teleported="false" popper-class="popover-card_chat" placement="bottom">
               <template #reference>
                 <el-icon
@@ -324,7 +336,7 @@ const handleConfirmPassword = () => {
 
   .chat-list-item {
     width: 100%;
-    height: 40px;
+    min-height: 52px;
     cursor: pointer;
     border-radius: 6px;
     line-height: 22px;
@@ -340,9 +352,27 @@ const handleConfirmPassword = () => {
     text-overflow: ellipsis;
     white-space: nowrap;
 
-    .title {
+    .title-wrap {
       flex: 1;
       width: 0;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .title {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .time {
+      margin-top: 2px;
+      color: rgba(100, 106, 115, 0.72);
+      font-size: 12px;
+      line-height: 16px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;

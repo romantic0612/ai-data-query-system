@@ -41,8 +41,8 @@ from apps.chat.curd.chat import save_question, save_sql_answer, save_sql, \
 from apps.chat.models.chat_model import ChatQuestion, ChatRecord, Chat, RenameChat, ChatLog, OperationEnum, \
     ChatFinishStep, AxisObj, SystemPromptMessage, HumanPromptMessage, AIPromptMessage
 from apps.data_training.curd.data_training import get_training_template
-from apps.datasource.crud.datasource import get_api_sources_from_ds, get_table_schema, get_tables_sample_data, \
-    is_auto_retrieval_enabled
+from apps.datasource.crud.datasource import build_datasource_search_description, get_api_sources_from_ds, \
+    get_table_schema, get_tables_sample_data, is_auto_retrieval_enabled
 from apps.datasource.crud.permission import get_row_permission_filters, is_normal_user
 from apps.datasource.embedding.ds_embedding import get_ds_embedding
 from apps.datasource.models.datasource import CoreDatasource
@@ -662,7 +662,7 @@ class LLMService:
                 if not is_auto_retrieval_enabled(ds):
                     SQLBotLogUtil.info(f"db route: skip datasource {ds.id} because auto retrieval disabled")
                     continue
-                description = ds.description or ""
+                description = build_datasource_search_description(_session, ds)
                 _ds_list.append({
                     "id": ds.id,
                     "name": ds.name,

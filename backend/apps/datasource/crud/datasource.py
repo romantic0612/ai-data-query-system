@@ -71,6 +71,49 @@ def is_auto_retrieval_enabled(ds: CoreDatasource) -> bool:
     return True
 
 
+def build_datasource_search_description(session: SessionDep, ds: CoreDatasource,
+                                        max_tables: int = 30, max_fields: int = 12) -> str:
+    parts = []
+    if ds.description:
+        parts.append(str(ds.description).strip())
+
+    tables = session.query(CoreTable).filter(
+        and_(CoreTable.ds_id == ds.id, CoreTable.checked == True)
+    ).order_by(CoreTable.table_name.asc()).limit(max_tables).all()
+
+    table_ids = [table.id for table in tables]
+    fields_by_table: dict[int, list[CoreField]] = {}
+    if table_ids:
+        fields = session.query(CoreField).filter(
+            and_(CoreField.table_id.in_(table_ids), CoreField.checked == True)
+        ).order_by(CoreField.field_index.asc()).all()
+        for field in fields:
+            fields_by_table.setdefault(field.table_id, [])
+            if len(fields_by_table[field.table_id]) < max_fields:
+                fields_by_table[field.table_id].append(field)
+
+    table_lines = []
+    for table in tables:
+        table_comment = table.custom_comment or table.table_comment or ""
+        field_terms = []
+        for field in fields_by_table.get(table.id, []):
+            field_comment = field.custom_comment or field.field_comment or ""
+            if field_comment and field_comment != field.field_name:
+                field_terms.append(f"{field.field_name}({field_comment})")
+            else:
+                field_terms.append(field.field_name)
+        line = table.table_name
+        if table_comment and table_comment != table.table_name:
+            line += f": {table_comment}"
+        if field_terms:
+            line += f" | fields: {', '.join(field_terms)}"
+        table_lines.append(line)
+
+    if table_lines:
+        parts.append("tables:\n" + "\n".join(table_lines))
+    return "\n".join([part for part in parts if part])
+
+
 def get_api_sources_from_ds(ds: CoreDatasource) -> List[dict]:
     config = _load_datasource_json_config(ds)
     sources = config.get("api_sources") or config.get("endpoints") or []

@@ -34,7 +34,7 @@ def get_assistant_user(*, id: int):
 
 
 def get_assistant_ds(session: Session, llm_service) -> list[dict]:
-    from apps.datasource.crud.datasource import is_auto_retrieval_enabled
+    from apps.datasource.crud.datasource import build_datasource_search_description, is_auto_retrieval_enabled
 
     assistant: AssistantHeader = llm_service.current_assistant
     type = assistant.type
@@ -62,7 +62,7 @@ def get_assistant_ds(session: Session, llm_service) -> list[dict]:
             result_list.append({
                 "id": ds.id,
                 "name": ds.name,
-                "description": ds.description
+                "description": build_datasource_search_description(session, ds)
             })
 
         # filter private ds if offline

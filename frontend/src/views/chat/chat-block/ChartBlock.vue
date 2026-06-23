@@ -148,6 +148,8 @@ const chartType = computed<ChartTypes>({
   },
 })
 
+const isRawAnswer = computed(() => Boolean(chartObject.value.raw_answer && !props.enlarge))
+
 const chartTypeList = computed(() => {
   const _list = []
   if (chartObject.value) {
@@ -375,178 +377,185 @@ watch(
         (isPredict && message?.record?.chart && data.length > 0))
     "
     v-loading.fullscreen.lock="loading"
-    class="chart-component-container"
-    :class="{ 'full-screen': enlarge, compact: chartObject.raw_answer && !enlarge }"
+    :class="[
+      isRawAnswer ? 'raw-answer-container' : 'chart-component-container',
+      { 'full-screen': enlarge },
+    ]"
   >
-    <div class="header-bar">
-      <div class="title">
-        {{ chartObject.title }}
-      </div>
-      <div class="buttons-bar">
-        <div class="chart-select-container">
-          <el-tooltip effect="dark" :offset="8" :content="t('chat.type')" placement="top">
-            <ChartPopover
-              v-if="chartTypeList.length > 0"
-              :chart-type-list="chartTypeList"
-              :chart-type="chartType"
-              :title="t('chat.type')"
-              @type-change="onTypeChange"
-            ></ChartPopover>
-          </el-tooltip>
-
-          <el-tooltip
-            effect="dark"
-            :offset="8"
-            :content="t('chat.chart_type.table')"
-            placement="top"
-          >
-            <el-button
-              class="tool-btn"
-              :class="{ 'chart-active': currentChartType === 'table' }"
-              text
-              @click="changeTable"
-            >
-              <el-icon size="16">
-                <ICON_TABLE />
-              </el-icon>
-            </el-button>
-          </el-tooltip>
-        </div>
-
-        <div v-if="currentChartType !== 'table'" class="chart-select-container">
-          <el-tooltip
-            effect="dark"
-            :offset="8"
-            :content="showLabel ? t('chat.hide_label') : t('chat.show_label')"
-            placement="top"
-          >
-            <el-button
-              class="tool-btn"
-              :class="{ 'chart-active': showLabel }"
-              text
-              @click="showLabel = !showLabel"
-            >
-              <el-icon size="16">
-                <ICON_STYLE />
-              </el-icon>
-            </el-button>
-          </el-tooltip>
-        </div>
-
-        <div v-if="message?.record?.sql && showSQLBtn">
-          <el-tooltip effect="dark" :offset="8" :content="t('chat.show_sql')" placement="top">
-            <el-button class="tool-btn" text @click="showSql">
-              <el-icon size="16">
-                <icon_sql_outlined />
-              </el-icon>
-            </el-button>
-          </el-tooltip>
-        </div>
-        <div v-if="message?.record?.chart">
-          <el-popover
-            ref="exportRef"
-            trigger="click"
-            popper-class="export_to_select"
-            placement="bottom"
-          >
-            <template #reference>
-              <div>
-                <el-tooltip
-                  effect="dark"
-                  :offset="8"
-                  :content="t('chat.export_to')"
-                  placement="top"
-                >
-                  <el-button class="tool-btn" text>
-                    <el-icon size="16">
-                      <icon_export_outlined />
-                    </el-icon>
-                  </el-button>
-                </el-tooltip>
-              </div>
-            </template>
-            <div class="popover">
-              <div class="popover-content">
-                <div class="title">{{ t('chat.export_to') }}</div>
-                <div class="popover-item" @click="exportToExcel">
-                  <el-icon size="16">
-                    <icon_file_excel_colorful />
-                  </el-icon>
-                  <div class="model-name">{{ t('chat.excel') }}</div>
-                </div>
-                <div
-                  v-if="currentChartType !== 'table'"
-                  class="popover-item"
-                  @click="exportToImage"
-                >
-                  <el-icon size="16">
-                    <icon_file_image_colorful />
-                  </el-icon>
-                  <div class="model-name">{{ t('chat.picture') }}</div>
-                </div>
-              </div>
-            </div>
-          </el-popover>
-        </div>
-        <div v-if="message?.record?.chart && !isAssistant">
-          <el-tooltip effect="dark" :content="t('chat.add_to_dashboard')" placement="top">
-            <el-button class="tool-btn" text @click="addToDashboard">
-              <el-icon size="16">
-                <icon_into_item_outlined />
-              </el-icon>
-            </el-button>
-          </el-tooltip>
-        </div>
-        <div class="divider" />
-        <div v-if="!enlarge">
-          <el-tooltip
-            effect="dark"
-            :offset="8"
-            :content="!isCompletePage ? $t('common.zoom_in') : t('chat.full_screen')"
-            placement="top"
-          >
-            <el-button class="tool-btn" text @click="openFullScreen">
-              <el-icon size="16">
-                <icon_window_max_outlined />
-              </el-icon>
-            </el-button>
-          </el-tooltip>
-        </div>
-        <div v-else>
-          <el-tooltip
-            effect="dark"
-            :offset="8"
-            :content="!isCompletePage ? $t('common.zoom_out') : t('chat.exit_full_screen')"
-            placement="top"
-          >
-            <el-button class="tool-btn" text @click="closeFullScreen">
-              <el-icon size="16">
-                <icon_window_mini_outlined />
-              </el-icon>
-            </el-button>
-          </el-tooltip>
-        </div>
-      </div>
-    </div>
-
-    <template v-if="message?.record?.chart">
-      <div v-if="chartObject.raw_answer && !enlarge" class="raw-answer-block">
+    <template v-if="isRawAnswer">
+      <div class="raw-answer-block">
         {{ chartObject.raw_answer }}
       </div>
-      <div v-else class="chart-block">
-        <DisplayChartBlock
-          :id="chartId"
-          ref="chartRef"
-          :chart-type="chartType"
-          :message="message"
-          :data="data"
-          :loading-data="loadingData"
-          :show-label="showLabel"
-        />
+    </template>
+
+    <template v-else>
+      <div class="header-bar">
+        <div class="title">
+          {{ chartObject.title }}
+        </div>
+        <div class="buttons-bar">
+          <div class="chart-select-container">
+            <el-tooltip effect="dark" :offset="8" :content="t('chat.type')" placement="top">
+              <ChartPopover
+                v-if="chartTypeList.length > 0"
+                :chart-type-list="chartTypeList"
+                :chart-type="chartType"
+                :title="t('chat.type')"
+                @type-change="onTypeChange"
+              ></ChartPopover>
+            </el-tooltip>
+
+            <el-tooltip
+              effect="dark"
+              :offset="8"
+              :content="t('chat.chart_type.table')"
+              placement="top"
+            >
+              <el-button
+                class="tool-btn"
+                :class="{ 'chart-active': currentChartType === 'table' }"
+                text
+                @click="changeTable"
+              >
+                <el-icon size="16">
+                  <ICON_TABLE />
+                </el-icon>
+              </el-button>
+            </el-tooltip>
+          </div>
+
+          <div v-if="currentChartType !== 'table'" class="chart-select-container">
+            <el-tooltip
+              effect="dark"
+              :offset="8"
+              :content="showLabel ? t('chat.hide_label') : t('chat.show_label')"
+              placement="top"
+            >
+              <el-button
+                class="tool-btn"
+                :class="{ 'chart-active': showLabel }"
+                text
+                @click="showLabel = !showLabel"
+              >
+                <el-icon size="16">
+                  <ICON_STYLE />
+                </el-icon>
+              </el-button>
+            </el-tooltip>
+          </div>
+
+          <div v-if="message?.record?.sql && showSQLBtn">
+            <el-tooltip effect="dark" :offset="8" :content="t('chat.show_sql')" placement="top">
+              <el-button class="tool-btn" text @click="showSql">
+                <el-icon size="16">
+                  <icon_sql_outlined />
+                </el-icon>
+              </el-button>
+            </el-tooltip>
+          </div>
+          <div v-if="message?.record?.chart">
+            <el-popover
+              ref="exportRef"
+              trigger="click"
+              popper-class="export_to_select"
+              placement="bottom"
+            >
+              <template #reference>
+                <div>
+                  <el-tooltip
+                    effect="dark"
+                    :offset="8"
+                    :content="t('chat.export_to')"
+                    placement="top"
+                  >
+                    <el-button class="tool-btn" text>
+                      <el-icon size="16">
+                        <icon_export_outlined />
+                      </el-icon>
+                    </el-button>
+                  </el-tooltip>
+                </div>
+              </template>
+              <div class="popover">
+                <div class="popover-content">
+                  <div class="title">{{ t('chat.export_to') }}</div>
+                  <div class="popover-item" @click="exportToExcel">
+                    <el-icon size="16">
+                      <icon_file_excel_colorful />
+                    </el-icon>
+                    <div class="model-name">{{ t('chat.excel') }}</div>
+                  </div>
+                  <div
+                    v-if="currentChartType !== 'table'"
+                    class="popover-item"
+                    @click="exportToImage"
+                  >
+                    <el-icon size="16">
+                      <icon_file_image_colorful />
+                    </el-icon>
+                    <div class="model-name">{{ t('chat.picture') }}</div>
+                  </div>
+                </div>
+              </div>
+            </el-popover>
+          </div>
+          <div v-if="message?.record?.chart && !isAssistant">
+            <el-tooltip effect="dark" :content="t('chat.add_to_dashboard')" placement="top">
+              <el-button class="tool-btn" text @click="addToDashboard">
+                <el-icon size="16">
+                  <icon_into_item_outlined />
+                </el-icon>
+              </el-button>
+            </el-tooltip>
+          </div>
+          <div class="divider" />
+          <div v-if="!enlarge">
+            <el-tooltip
+              effect="dark"
+              :offset="8"
+              :content="!isCompletePage ? $t('common.zoom_in') : t('chat.full_screen')"
+              placement="top"
+            >
+              <el-button class="tool-btn" text @click="openFullScreen">
+                <el-icon size="16">
+                  <icon_window_max_outlined />
+                </el-icon>
+              </el-button>
+            </el-tooltip>
+          </div>
+          <div v-else>
+            <el-tooltip
+              effect="dark"
+              :offset="8"
+              :content="!isCompletePage ? $t('common.zoom_out') : t('chat.exit_full_screen')"
+              placement="top"
+            >
+              <el-button class="tool-btn" text @click="closeFullScreen">
+                <el-icon size="16">
+                  <icon_window_mini_outlined />
+                </el-icon>
+              </el-button>
+            </el-tooltip>
+          </div>
+        </div>
       </div>
-      <div v-if="dataObject.limit" class="over-limit-hint">
-        {{ t('chat.data_over_limit', [dataObject.limit]) }}
-      </div>
+
+      <template v-if="message?.record?.chart">
+        <div class="chart-block">
+          <DisplayChartBlock
+            :id="chartId"
+            ref="chartRef"
+            :chart-type="chartType"
+            :message="message"
+            :data="data"
+            :loading-data="loadingData"
+            :show-label="showLabel"
+          />
+        </div>
+        <div v-if="dataObject.limit" class="over-limit-hint">
+          {{ t('chat.data_over_limit', [dataObject.limit]) }}
+        </div>
+      </template>
     </template>
 
     <AddViewDashboard ref="addViewRef"></AddViewDashboard>
@@ -854,6 +863,22 @@ watch(
     min-height: 24px;
     line-height: 24px;
     font-size: 14px;
+  }
+}
+
+.raw-answer-container {
+  width: fit-content;
+  max-width: min(100%, 720px);
+
+  .raw-answer-block {
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: rgba(248, 249, 250, 1);
+    color: rgba(31, 35, 41, 1);
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 28px;
+    word-break: break-word;
   }
 }
 

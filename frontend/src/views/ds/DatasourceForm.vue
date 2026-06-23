@@ -728,7 +728,7 @@ defineExpose({
               </div>
             </div>
             <el-upload
-              v-if="form.filename && !form.id"
+              v-if="form.filename"
               class="upload-user"
               accept=".xlsx,.xls,.csv"
               :headers="headers"
@@ -744,7 +744,7 @@ defineExpose({
               </el-button>
             </el-upload>
             <el-upload
-              v-else-if="!form.id"
+              v-else
               class="upload-user"
               accept=".xlsx,.xls,.csv"
               :headers="headers"

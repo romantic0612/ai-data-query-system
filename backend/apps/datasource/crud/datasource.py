@@ -326,6 +326,17 @@ def update_ds(session: SessionDep, trans: Trans, user: CurrentUser, ds: CoreData
         ]
         sync_table(session, ds, api_tables)
         updateNum(session, ds)
+    elif equals_ignore_case(ds.type, "excel"):
+        config = json.loads(aes_decrypt(ds.configuration)) if ds.configuration else {}
+        excel_tables = [
+            CoreTable(ds_id=ds.id, checked=True, table_name=sheet.get("tableName"),
+                      table_comment=sheet.get("tableComment") or sheet.get("tableName"),
+                      custom_comment=sheet.get("tableComment") or sheet.get("tableName"))
+            for sheet in config.get("sheets") or []
+            if sheet.get("tableName")
+        ]
+        sync_table(session, ds, excel_tables)
+        updateNum(session, ds)
 
     run_save_ds_embeddings([ds.id])
     return ds

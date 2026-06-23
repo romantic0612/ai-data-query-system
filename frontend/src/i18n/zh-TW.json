@@ -173,7 +173,7 @@
     "login_": "登入",
     "confirm2": "確定",
     "excessive_tables_selected": "選擇資料表過量",
-    "to_continue_saving": "選擇的資料表數量為：{msg}，已超出30，可能會導致操作逾時或者無回應，是否繼續儲存？",
+    "to_continue_saving": "\u9078\u64c7\u7684\u8cc7\u6599\u8868\u6578\u91cf\u70ba\uff1a{msg}\uff0c\u5df2\u8d85\u51fa{limit}\uff0c\u53ef\u80fd\u6703\u5c0e\u81f4\u64cd\u4f5c\u903e\u6642\u6216\u8005\u7121\u56de\u61c9\uff0c\u662f\u5426\u7e7c\u7e8c\u5132\u5b58\uff1f",
     "proceed_with_caution": "刪除後無法復原，請謹慎操作。",
     "sales_in_2024": "是否刪除對話：{msg}？",
     "limited_to_30": "資料表數量限制30",

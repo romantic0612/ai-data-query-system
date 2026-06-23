@@ -173,7 +173,7 @@
     "login_": "登录",
     "confirm2": "确定",
     "excessive_tables_selected": "选择数据表过量",
-    "to_continue_saving": "选择的数据表数量为：{msg}，已超出30，可能会导致操作超时或者无响应，是否继续保存？",
+    "to_continue_saving": "\u9009\u62e9\u7684\u6570\u636e\u8868\u6570\u91cf\u4e3a\uff1a{msg}\uff0c\u5df2\u8d85\u51fa{limit}\uff0c\u53ef\u80fd\u4f1a\u5bfc\u81f4\u64cd\u4f5c\u8d85\u65f6\u6216\u8005\u65e0\u54cd\u5e94\uff0c\u662f\u5426\u7ee7\u7eed\u4fdd\u5b58\uff1f",
     "proceed_with_caution": "删除后无法恢复，请谨慎操作。",
     "sales_in_2024": "是否删除对话：{msg}？",
     "limited_to_30": "数据表数量限制30",

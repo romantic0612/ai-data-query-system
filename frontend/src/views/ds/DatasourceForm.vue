@@ -51,6 +51,7 @@ const getUploadURL = import.meta.env.VITE_API_BASE_URL + '/datasource/parseExcel
 const saveLoading = ref<boolean>(false)
 const uploadLoading = ref(false)
 const { t } = useI18n()
+const MAX_SELECTED_TABLES_WARNING = 100
 const schemaList = ref<any>([])
 const defaultApiConfig = JSON.stringify(
   {
@@ -316,9 +317,12 @@ const save = async (formEl: FormInstance | undefined) => {
           return { table_name: ele.tableName, table_comment: ele.tableComment }
         })
 
-      if (checkTableList.value.length > 30) {
+      if (checkTableList.value.length > MAX_SELECTED_TABLES_WARNING) {
         const excessive = await ElMessageBox.confirm(t('common.excessive_tables_selected'), {
-          tip: t('common.to_continue_saving', { msg: checkTableList.value.length }),
+          tip: t('common.to_continue_saving', {
+            msg: checkTableList.value.length,
+            limit: MAX_SELECTED_TABLES_WARNING,
+          }),
           confirmButtonText: t('common.save'),
           cancelButtonText: t('common.cancel'),
           confirmButtonType: 'primary',

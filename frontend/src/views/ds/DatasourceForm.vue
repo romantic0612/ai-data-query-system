@@ -225,6 +225,12 @@ const initForm = (item: any, editTable: boolean = false) => {
       form.value.sheets = configuration.sheets
       form.value.mode = configuration.mode
       form.value.timeout = configuration.timeout ? configuration.timeout : 30
+      uploadedFileNames.value = configuration.filename
+        ? String(configuration.filename)
+            .split(';')
+            .map((item) => item.trim())
+            .filter(Boolean)
+        : []
       form.value.lowVersion =
         configuration.lowVersion !== null && configuration.lowVersion !== undefined
           ? configuration.lowVersion
@@ -285,6 +291,7 @@ const initForm = (item: any, editTable: boolean = false) => {
     isEditTable.value = false
     checkList.value = []
     tableList.value = []
+    uploadedFileNames.value = []
     form.value = {
       name: '',
       description: '',
@@ -525,6 +532,7 @@ const beforeUpload = (rawFile: any) => {
   return true
 }
 let fileDetail: any = null
+const uploadedFileNames = ref<string[]>([])
 const onSuccess = (response: any) => {
   fileDetail = response.data
   excelDetailDialogRef.value?.init(response.data)
@@ -539,9 +547,14 @@ const openFile = () => {
 }
 
 const saveExcel = (excel: any) => {
-  form.value.filename = excel.filename
-  form.value.sheets = excel.sheets
-  tableList.value = excel.sheets
+  if (excel.filename && !uploadedFileNames.value.includes(excel.filename)) {
+    uploadedFileNames.value.push(excel.filename)
+  }
+  const nextSheets = excel.sheets || []
+  form.value.filename = uploadedFileNames.value.join('; ')
+  form.value.sheets = [...(form.value.sheets || []), ...nextSheets]
+  tableList.value = [...(tableList.value || []), ...nextSheets]
+  excelUploadSuccess.value = form.value.sheets.length > 0
 }
 
 const onError = (e: any) => {
@@ -583,6 +596,9 @@ const clearFile = () => {
   form.value.filename = ''
   form.value.sheets = []
   tableList.value = []
+  uploadedFileNames.value = []
+  fileDetail = null
+  excelUploadSuccess.value = false
 }
 
 const setFile = (file: any) => {
@@ -692,7 +708,7 @@ defineExpose({
               <img :src="icon_fileExcel_colorful" width="40px" height="40px" />
               <div class="file-name">
                 <div class="name">{{ form.filename }}</div>
-                <div class="size">{{ form.filename.split('.')[1] }} - {{ fileSize }}</div>
+                <div class="size">{{ form.sheets.length }} tables - {{ fileSize }}</div>
               </div>
               <div
                 style="
@@ -724,7 +740,7 @@ defineExpose({
               :file-list="form.sheets"
             >
               <el-button text style="line-height: 22px; height: 22px">
-                {{ $t('common.re_upload') }}
+                继续上传
               </el-button>
             </el-upload>
             <el-upload

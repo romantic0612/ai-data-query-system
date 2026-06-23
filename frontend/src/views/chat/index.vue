@@ -698,7 +698,7 @@ const createNewChat = async () => {
     hiddenChatCreatorRef.value?.createChat()
     return
   }
-  chatCreatorRef.value?.showDs()
+  hiddenChatCreatorRef.value?.createChat()
 }
 
 function getChatList(callback?: () => void) {

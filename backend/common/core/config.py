@@ -127,6 +127,8 @@ class Settings(BaseSettings):
     TABLE_EMBEDDING_ENABLED: bool = True
     TABLE_EMBEDDING_COUNT: int = 10
     DS_EMBEDDING_COUNT: int = 10
+    API_INTENT_LLM_TIMEOUT_SECONDS: int = 8
+    API_INTENT_TIMEOUT_FALLBACK_DB: bool = False
 
     ORACLE_CLIENT_PATH: str = '/opt/sqlbot/db_client/oracle_instant_client'
 
@@ -136,6 +138,7 @@ class Settings(BaseSettings):
                      'PARSE_REASONING_BLOCK_ENABLED',
                      'PG_POOL_PRE_PING',
                      'TABLE_EMBEDDING_ENABLED',
+                     'API_INTENT_TIMEOUT_FALLBACK_DB',
                      mode='before')
     @classmethod
     def lowercase_bool(cls, v: Any) -> Any:

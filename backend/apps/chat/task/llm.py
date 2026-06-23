@@ -128,6 +128,7 @@ class LLMService:
         self.chunk_list = []
         self.current_user = current_user
         self.current_assistant = current_assistant
+        self.api_intent_timeout = False
 
         self.table_name_list = []
 
@@ -1401,7 +1402,20 @@ class LLMService:
             "}"
         )
         try:
-            result = self.llm.invoke([SystemPromptMessage(system_prompt), HumanMessage(user_prompt)])
+            timeout_seconds = max(1, int(settings.API_INTENT_LLM_TIMEOUT_SECONDS or 8))
+            future = executor.submit(
+                self.llm.invoke,
+                [SystemPromptMessage(system_prompt), HumanMessage(user_prompt)]
+            )
+            try:
+                result = future.result(timeout=timeout_seconds)
+            except concurrent.futures.TimeoutError:
+                self.api_intent_timeout = True
+                future.cancel()
+                SQLBotLogUtil.error(
+                    f"api intent parse timeout after {timeout_seconds}s, question={self.chat_question.question}"
+                )
+                return {"__timeout": True}
             content = getattr(result, "content", result)
             if isinstance(content, list):
                 content = "".join([str(item.get("text", item)) if isinstance(item, dict) else str(item)
@@ -1414,6 +1428,16 @@ class LLMService:
         except Exception as e:
             SQLBotLogUtil.error(f"api intent parse failed: {e}")
             return {}
+
+    def stop_after_api_intent_timeout(self):
+        if not self.api_intent_timeout or settings.API_INTENT_TIMEOUT_FALLBACK_DB:
+            return
+        timeout_seconds = max(1, int(settings.API_INTENT_LLM_TIMEOUT_SECONDS or 8))
+        raise SingleMessageError(
+            f"API语义识别超过 {timeout_seconds} 秒，已停止慢路径。"
+            "当前问题没有命中已配置API快速规则；请换一个更明确的问题，或在后台补充API关键词/接口能力。"
+            "如确实需要继续数据库兜底，可设置 API_INTENT_TIMEOUT_FALLBACK_DB=true。"
+        )
 
     def score_api_source(self, source: Dict[str, Any], intent: Optional[Dict[str, Any]] = None) -> int:
         question = (self.chat_question.question or "").lower()
@@ -1561,8 +1585,10 @@ class LLMService:
             SQLBotLogUtil.info(
                 f"api route: llm intent parsed in {(time.perf_counter() - intent_start):.3f}s"
             )
-            source = self.try_select_api_source(sources, intent)
+            if not intent.get("__timeout"):
+                source = self.try_select_api_source(sources, intent)
         if not source:
+            self.stop_after_api_intent_timeout()
             SQLBotLogUtil.info(f"api route: no api match, fallback db in {(time.perf_counter() - route_start):.3f}s")
             return None
         SQLBotLogUtil.info(
@@ -1856,13 +1882,15 @@ class LLMService:
                 api_source = self.try_select_api_source(api_sources)
                 if not api_source:
                     api_intent = self.analyze_api_intent(api_sources)
-                    api_source = self.try_select_api_source(api_sources, api_intent)
+                    if not api_intent.get("__timeout"):
+                        api_source = self.try_select_api_source(api_sources, api_intent)
                 if api_source:
                     api_source = self.apply_question_params_to_api_source(api_source, api_intent)
                     for chunk in self.run_selected_api_source_task(_session, api_source, in_chat, stream):
                         yield chunk
                     return
 
+                self.stop_after_api_intent_timeout()
                 self.clear_current_datasource_for_fallback(_session)
                 fallback_start = time.perf_counter()
                 ds_res = self.select_datasource(_session)

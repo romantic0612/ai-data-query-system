@@ -31,7 +31,12 @@ from ..crud.field import get_fields_by_table_id
 from ..crud.table import get_tables_by_ds_id
 from ..models.datasource import CoreDatasource, CreateDatasource, TableObj, CoreTable, CoreField, FieldObj, \
     TableSchemaResponse, ColumnSchemaResponse, PreviewResponse, ImportRequest
-from ..utils.excel import parse_excel_preview, USER_TYPE_TO_PANDAS
+from ..utils.excel import (
+    EDUCATION_STATS_SHEET_NAME,
+    USER_TYPE_TO_PANDAS,
+    parse_education_statistics_workbook,
+    parse_excel_preview,
+)
 
 router = APIRouter(tags=["Datasource"], prefix="/datasource")
 path = settings.EXCEL_PATH
@@ -571,6 +576,7 @@ async def import_to_db(session: SessionDep, trans: Trans, import_req: ImportRequ
         for sheet_info in import_req.sheets:
             sheet_name = sheet_info.sheetName
             table_name = f"excel_{filter_string(sheet_name)}_{hashlib.sha256(uuid.uuid4().bytes).hexdigest()[:10]}"
+            table_comment = ""
             fields = sheet_info.fields
 
             field_mapping = {f.fieldName: f.fieldType for f in fields}
@@ -580,7 +586,12 @@ async def import_to_db(session: SessionDep, trans: Trans, import_req: ImportRequ
             }
 
             try:
-                if save_path.endswith(".csv"):
+                if sheet_name == EDUCATION_STATS_SHEET_NAME:
+                    df = parse_education_statistics_workbook(save_path)
+                    if df.empty:
+                        raise ValueError("education statistics parser returned empty data")
+                    table_comment = "\u6559\u80b2\u4e8b\u4e1a\u7edf\u8ba1\u6e05\u6d17\u660e\u7ec6"
+                elif save_path.endswith(".csv"):
                     df = pd.read_csv(save_path, engine='c', dtype=dtype_dict)
                     sheet_name = "Sheet1"
                 else:
@@ -608,7 +619,7 @@ async def import_to_db(session: SessionDep, trans: Trans, import_req: ImportRequ
                 results.append({
                     "sheetName": sheet_name,
                     "tableName": table_name,
-                    "tableComment": "",
+                    "tableComment": table_comment,
                     "rows": len(df)
                 })
             except Exception as e:

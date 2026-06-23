@@ -34,6 +34,8 @@ def get_assistant_user(*, id: int):
 
 
 def get_assistant_ds(session: Session, llm_service) -> list[dict]:
+    from apps.datasource.crud.datasource import is_auto_retrieval_enabled
+
     assistant: AssistantHeader = llm_service.current_assistant
     type = assistant.type
     if type == 0 or type == 2:
@@ -41,8 +43,7 @@ def get_assistant_ds(session: Session, llm_service) -> list[dict]:
         if configuration:
             config: dict[any] = json.loads(configuration)
             oid: int = int(config['oid'])
-            stmt = select(CoreDatasource.id, CoreDatasource.name, CoreDatasource.description).where(
-                CoreDatasource.oid == oid)
+            stmt = select(CoreDatasource).where(CoreDatasource.oid == oid)
             if not assistant.online:
                 public_list: list[int] = config.get('public_list') or None
                 if public_list:
@@ -54,14 +55,15 @@ def get_assistant_ds(session: Session, llm_service) -> list[dict]:
                     stmt = stmt.where(~CoreDatasource.id.in_(private_list)) """
         db_ds_list = session.exec(stmt)
 
-        result_list = [
-            {
+        result_list = []
+        for ds in db_ds_list:
+            if not is_auto_retrieval_enabled(ds):
+                continue
+            result_list.append({
                 "id": ds.id,
                 "name": ds.name,
                 "description": ds.description
-            }
-            for ds in db_ds_list
-        ]
+            })
 
         # filter private ds if offline
         return result_list

@@ -39,6 +39,16 @@
         <el-form-item :label="t('ds.form.description')">
           <el-input v-model="form.description" clearable :rows="2" type="textarea" />
         </el-form-item>
+        <el-form-item label="自动检索">
+          <el-switch
+            v-model="form.autoRetrievalEnabled"
+            active-text="参与自动检索"
+            inactive-text="不参与自动检索"
+          />
+          <div class="form-tip">
+            关闭后，用户未指定数据源时不会自动检索这个数据源；手动打开问数仍可使用。
+          </div>
+        </el-form-item>
         <el-form-item :label="t('ds.type')" prop="type">
           <el-select v-model="form.type" placeholder="Select Type" :disabled="!isCreate">
             <el-option
@@ -207,6 +217,7 @@ const getUploadURL = import.meta.env.VITE_API_BASE_URL + '/datasource/uploadExce
 const saveLoading = ref<boolean>(false)
 const defaultApiConfig = JSON.stringify(
   {
+    auto_retrieval_enabled: true,
     api_sources: [
       {
         id: 'undergraduate_count',
@@ -278,6 +289,7 @@ const form = ref<any>({
   mode: 'service_name',
   timeout: 30,
   apiConfigText: defaultApiConfig,
+  autoRetrievalEnabled: true,
 })
 
 const close = () => {
@@ -301,8 +313,11 @@ const open = (item: any, editTable: boolean = false) => {
     form.value.description = item.description
     form.value.type = item.type
     form.value.configuration = item.configuration
+    form.value.autoRetrievalEnabled = true
     if (item.configuration) {
       const configuration = JSON.parse(decrypted(item.configuration))
+      form.value.autoRetrievalEnabled =
+        configuration.auto_retrieval_enabled !== false && configuration.auto_retrieval !== false
       if (item.type === 'api') {
         form.value.apiConfigText = JSON.stringify(configuration, null, 2)
       }
@@ -377,6 +392,7 @@ const open = (item: any, editTable: boolean = false) => {
       mode: 'service_name',
       timeout: 30,
       apiConfigText: defaultApiConfig,
+      autoRetrievalEnabled: true,
     }
   }
   dialogVisible.value = true
@@ -424,6 +440,7 @@ const save = async (formEl: FormInstance | undefined) => {
 const buildConf = () => {
   if (form.value.type === 'api') {
     const apiConfig = JSON.parse(form.value.apiConfigText || '{}')
+    apiConfig.auto_retrieval_enabled = form.value.autoRetrievalEnabled !== false
     form.value.configuration = encrypted(JSON.stringify(apiConfig))
     const obj = JSON.parse(JSON.stringify(form.value))
     delete obj.driver
@@ -439,6 +456,7 @@ const buildConf = () => {
     delete obj.mode
     delete obj.timeout
     delete obj.apiConfigText
+    delete obj.autoRetrievalEnabled
     return obj
   }
   form.value.configuration = encrypted(
@@ -454,6 +472,7 @@ const buildConf = () => {
       sheets: form.value.sheets,
       mode: form.value.mode,
       timeout: form.value.timeout,
+      auto_retrieval_enabled: form.value.autoRetrievalEnabled !== false,
     })
   )
   const obj = JSON.parse(JSON.stringify(form.value))
@@ -470,6 +489,7 @@ const buildConf = () => {
   delete obj.mode
   delete obj.timeout
   delete obj.apiConfigText
+  delete obj.autoRetrievalEnabled
   return obj
 }
 

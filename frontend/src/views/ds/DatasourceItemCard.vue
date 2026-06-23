@@ -5,10 +5,22 @@ import ExcelDs from '@/assets/svg/ds/Excel-ds.svg'
 import PgDs from '@/assets/svg/ds/pg-ds.svg'
 import MysqlDs from '@/assets/svg/ds/mysql-ds.svg'
 import OracleDs from '@/assets/svg/ds/oracle-ds.svg'
+import { computed } from 'vue'
+import { decrypted } from './js/aes'
 
-defineProps<{
+const props = defineProps<{
   ds: any
 }>()
+
+const autoRetrievalEnabled = computed(() => {
+  if (!props.ds?.configuration) return true
+  try {
+    const configuration = JSON.parse(decrypted(props.ds.configuration))
+    return configuration.auto_retrieval_enabled !== false && configuration.auto_retrieval !== false
+  } catch {
+    return true
+  }
+})
 
 // const getStatus = (status: string) => {
 //   if (status === 'Success') {
@@ -37,6 +49,9 @@ defineProps<{
     <div class="connection-details">
       <div class="connection-name">{{ ds.name }}</div>
       <div class="connection-type">{{ ds.type_name }}</div>
+      <div class="retrieval-badge" :class="{ disabled: !autoRetrievalEnabled }">
+        {{ autoRetrievalEnabled ? '参与自动检索' : '不参与自动检索' }}
+      </div>
       <div class="connection-host">{{ ds.description }}</div>
       <div class="connection-last">{{ datetimeFormat(ds.create_time) }}</div>
     </div>
@@ -87,9 +102,27 @@ defineProps<{
 
   .connection-type {
     color: #5f6368;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
     font-size: 14px;
     display: flex;
+  }
+
+  .retrieval-badge {
+    align-self: flex-start;
+    color: #0f8f68;
+    background: #e7f7f1;
+    border: 1px solid #a9e8d1;
+    border-radius: 6px;
+    font-size: 12px;
+    line-height: 20px;
+    padding: 0 8px;
+    margin-bottom: 8px;
+
+    &.disabled {
+      color: #7a4e00;
+      background: #fff4d6;
+      border-color: #f3d38b;
+    }
   }
 
   .connection-host {

@@ -122,6 +122,7 @@ class DatasourceConf(BaseModel):
     timeout: int = 30
     lowVersion: bool = False
     ssl: bool = False
+    auto_retrieval_enabled: bool = True
 
     def to_dict(self):
         return {
@@ -138,7 +139,8 @@ class DatasourceConf(BaseModel):
             "mode": self.mode,
             "timeout": self.timeout,
             "lowVersion": self.lowVersion,
-            "ssl": self.ssl
+            "ssl": self.ssl,
+            "auto_retrieval_enabled": self.auto_retrieval_enabled
         }
 
 

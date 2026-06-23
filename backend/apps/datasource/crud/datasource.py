@@ -51,6 +51,26 @@ def _load_datasource_json_config(ds: CoreDatasource) -> dict:
         return json.loads(ds.configuration)
 
 
+def _config_bool(value, default: bool = True) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, str):
+        return value.strip().lower() not in {"false", "0", "no", "off"}
+    return bool(value)
+
+
+def is_auto_retrieval_enabled(ds: CoreDatasource) -> bool:
+    try:
+        config = _load_datasource_json_config(ds)
+    except Exception:
+        return True
+    if "auto_retrieval_enabled" in config:
+        return _config_bool(config.get("auto_retrieval_enabled"), True)
+    if "auto_retrieval" in config:
+        return _config_bool(config.get("auto_retrieval"), True)
+    return True
+
+
 def get_api_sources_from_ds(ds: CoreDatasource) -> List[dict]:
     config = _load_datasource_json_config(ds)
     sources = config.get("api_sources") or config.get("endpoints") or []

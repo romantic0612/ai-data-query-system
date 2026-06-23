@@ -138,6 +138,21 @@ class LLMService:
         if not chat:
             raise SingleMessageError(f"Chat with id {chat_id} not found")
         ds: CoreDatasource | AssistantOutDsSchema | None = None
+        has_manual_datasource_record = bool(
+            chat.datasource
+            and session.query(ChatRecord).filter(
+                and_(ChatRecord.chat_id == chat.id, ChatRecord.first_chat.is_(True))
+            ).first()
+        )
+        self.manual_datasource_chat = bool(chat_question.datasource_id or has_manual_datasource_record)
+
+        if chat.datasource and not self.manual_datasource_chat:
+            SQLBotLogUtil.info(f"auto route: clear historical chat datasource binding {chat.datasource}")
+            chat.datasource = None
+            chat.engine_type = ''
+            session.add(chat)
+            session.commit()
+
         if not chat.datasource and chat_question.datasource_id:
             _ds = session.get(CoreDatasource, chat_question.datasource_id)
             if _ds:
@@ -723,14 +738,15 @@ class LLMService:
             if data.get('id') and data.get('id') != 0:
                 _datasource = data['id']
                 _chat = _session.get(Chat, self.record.chat_id)
-                _chat.datasource = _datasource
                 if self.current_assistant and self.current_assistant.type in dynamic_ds_types:
                     _ds = self.out_ds_instance.get_ds(data['id'])
                     self.ds = _ds
                     self.chat_question.engine = _ds.type + get_version(self.ds)
 
                     _engine_type = self.chat_question.engine
-                    _chat.engine_type = _ds.type
+                    if self.manual_datasource_chat:
+                        _chat.datasource = _datasource
+                        _chat.engine_type = _ds.type
                 else:
                     _ds = _session.get(CoreDatasource, _datasource)
                     if not _ds:
@@ -740,7 +756,9 @@ class LLMService:
                     self.chat_question.engine = self.get_engine_label(self.ds)
 
                     _engine_type = self.chat_question.engine
-                    _chat.engine_type = _ds.type_name
+                    if self.manual_datasource_chat:
+                        _chat.datasource = _datasource
+                        _chat.engine_type = _ds.type_name
                 # save chat
                 with _session.begin_nested():
                     # 为了能继续记日志，先单独处理下事务
@@ -1635,7 +1653,7 @@ class LLMService:
                 self.ds = CoreDatasource(**ds.model_dump())
                 self.chat_question.engine = self.get_engine_label(self.ds)
                 chat = session.get(Chat, self.record.chat_id)
-                if chat and not chat.datasource:
+                if chat and self.manual_datasource_chat:
                     chat.datasource = self.ds.id
                     chat.engine_type = self.ds.type_name or self.ds.type
                     session.add(chat)

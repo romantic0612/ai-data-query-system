@@ -33,11 +33,14 @@ docker build -t ai-data-query-system:latest .
 This command reuses the old SQLBot data directory so model config, datasource config, and PostgreSQL data are kept.
 
 ```bash
+test -f /opt/ai-data-query-system/.sqlbot_secret || openssl rand -urlsafe 32 > /opt/ai-data-query-system/.sqlbot_secret
+
 docker run -d \
   --name ai-data-query-system \
   --restart unless-stopped \
   -p 18000:8000 \
   -p 18001:8001 \
+  -e SECRET_KEY="$(cat /opt/ai-data-query-system/.sqlbot_secret)" \
   -e SERVER_IMAGE_HOST=http://114.213.146.102:18001/images/ \
   -v /opt/SQLBot-main/data/sqlbot/excel:/opt/sqlbot/data/excel \
   -v /opt/SQLBot-main/data/sqlbot/file:/opt/sqlbot/data/file \
@@ -86,12 +89,14 @@ git pull
 docker build -t ai-data-query-system:latest .
 docker stop ai-data-query-system 2>/dev/null || true
 docker rm ai-data-query-system 2>/dev/null || true
+test -f /opt/ai-data-query-system/.sqlbot_secret || openssl rand -urlsafe 32 > /opt/ai-data-query-system/.sqlbot_secret
 
 docker run -d \
   --name ai-data-query-system \
   --restart unless-stopped \
   -p 18000:8000 \
   -p 18001:8001 \
+  -e SECRET_KEY="$(cat /opt/ai-data-query-system/.sqlbot_secret)" \
   -e SERVER_IMAGE_HOST=http://114.213.146.102:18001/images/ \
   -v /opt/SQLBot-main/data/sqlbot/excel:/opt/sqlbot/data/excel \
   -v /opt/SQLBot-main/data/sqlbot/file:/opt/sqlbot/data/file \

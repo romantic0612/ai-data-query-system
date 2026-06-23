@@ -2,6 +2,7 @@ import concurrent
 import json
 import os
 import re
+import time
 import traceback
 import urllib.parse
 import warnings
@@ -1328,6 +1329,29 @@ class LLMService:
             return [str(item).lower().strip() for item in value if str(item).strip()]
         return [str(value).lower().strip()] if str(value).strip() else []
 
+    @staticmethod
+    def _compact_match_text(value: Any) -> str:
+        return re.sub(r"[\s\-_，。、“”‘’：:；;,.!?！？（）()\[\]【】]+", "", str(value or "").lower())
+
+    @staticmethod
+    def _api_term_score(question: str, candidate: Any) -> int:
+        text = LLMService._compact_match_text(candidate)
+        if not text:
+            return 0
+        compact_question = LLMService._compact_match_text(question)
+        if not compact_question:
+            return 0
+        if text in compact_question:
+            return max(2, len(text))
+        if len(text) >= 4 and compact_question in text:
+            return max(2, len(compact_question))
+        cjk_chars = {char for char in text if "\u4e00" <= char <= "\u9fff"}
+        if len(cjk_chars) >= 3:
+            overlap = sum(1 for char in cjk_chars if char in compact_question)
+            if overlap >= 3 and overlap / max(len(cjk_chars), 1) >= 0.45:
+                return overlap
+        return 0
+
     def analyze_api_intent(self, sources: List[Dict[str, Any]]) -> Dict[str, Any]:
         if not sources:
             return {}
@@ -1395,9 +1419,7 @@ class LLMService:
         question = (self.chat_question.question or "").lower()
         score = 0
         for candidate in self._flatten_api_capability_terms(source):
-            text = str(candidate).lower().strip()
-            if text and text in question:
-                score += max(2, len(text))
+            score += self._api_term_score(question, candidate)
         if intent:
             if intent.get("capability_id") and str(intent.get("capability_id")) == str(source.get("id")):
                 score += 100
@@ -1522,14 +1544,30 @@ class LLMService:
         return source
 
     def select_api_datasource_first(self, session: Session) -> Optional[Dict[str, Any]]:
+        route_start = time.perf_counter()
         sources = self.load_api_sources(session, self.current_user.oid)
+        SQLBotLogUtil.info(
+            f"api route: loaded {len(sources)} sources in {(time.perf_counter() - route_start):.3f}s"
+        )
         intent = None
+        rule_start = time.perf_counter()
         source = self.try_select_api_source(sources)
+        SQLBotLogUtil.info(
+            f"api route: rule match {'hit' if source else 'miss'} in {(time.perf_counter() - rule_start):.3f}s"
+        )
         if not source:
+            intent_start = time.perf_counter()
             intent = self.analyze_api_intent(sources)
+            SQLBotLogUtil.info(
+                f"api route: llm intent parsed in {(time.perf_counter() - intent_start):.3f}s"
+            )
             source = self.try_select_api_source(sources, intent)
         if not source:
+            SQLBotLogUtil.info(f"api route: no api match, fallback db in {(time.perf_counter() - route_start):.3f}s")
             return None
+        SQLBotLogUtil.info(
+            f"api route: selected {source.get('id') or source.get('name')} in {(time.perf_counter() - route_start):.3f}s"
+        )
         datasource_id = source.get("datasource_id")
         if datasource_id:
             ds = session.get(CoreDatasource, datasource_id)
@@ -1580,7 +1618,11 @@ class LLMService:
 
     def run_selected_api_source_task(self, session: Session, source: Dict[str, Any], in_chat: bool = True,
                                      stream: bool = True):
+        api_start = time.perf_counter()
         api_result = self.call_api_source(source)
+        SQLBotLogUtil.info(
+            f"api route: api call {source.get('id') or source.get('name')} finished in {(time.perf_counter() - api_start):.3f}s"
+        )
         chart = self.save_api_result(session, api_result)
         if in_chat:
             datasource_chunk = self.emit_datasource_selected(in_chat)
@@ -1788,6 +1830,7 @@ class LLMService:
 
             # select datasource if datasource is none
             if not self.ds:
+                select_ds_start = time.perf_counter()
                 ds_res = self.select_datasource(_session)
 
                 for chunk in ds_res:
@@ -1800,6 +1843,9 @@ class LLMService:
                     yield 'data:' + orjson.dumps({'id': self.ds.id, 'datasource_name': self.ds.name,
                                                   'engine_type': self.ds.type_name or self.ds.type,
                                                   'type': 'datasource'}).decode() + '\n\n'
+                SQLBotLogUtil.info(
+                    f"db route: datasource selected {getattr(self.ds, 'id', None)} in {(time.perf_counter() - select_ds_start):.3f}s"
+                )
 
             else:
                 self.validate_history_ds(_session)
@@ -1818,6 +1864,7 @@ class LLMService:
                     return
 
                 self.clear_current_datasource_for_fallback(_session)
+                fallback_start = time.perf_counter()
                 ds_res = self.select_datasource(_session)
                 for chunk in ds_res:
                     SQLBotLogUtil.info(chunk)
@@ -1829,6 +1876,9 @@ class LLMService:
                     yield 'data:' + orjson.dumps({'id': self.ds.id, 'datasource_name': self.ds.name,
                                                   'engine_type': self.ds.type_name or self.ds.type,
                                                   'type': 'datasource'}).decode() + '\n\n'
+                SQLBotLogUtil.info(
+                    f"db route: fallback datasource selected {getattr(self.ds, 'id', None)} in {(time.perf_counter() - fallback_start):.3f}s"
+                )
 
             # check connection
             connected = check_connection(ds=self.ds, trans=None)
@@ -1836,6 +1886,7 @@ class LLMService:
                 raise SQLBotDBConnectionError('Connect DB failed')
 
             # generate sql
+            sql_start = time.perf_counter()
             sql_res = self.generate_sql(_session)
             full_sql_text = ''
             for chunk in sql_res:
@@ -1846,6 +1897,7 @@ class LLMService:
                          'type': 'sql-result'}).decode() + '\n\n'
             if in_chat:
                 yield 'data:' + orjson.dumps({'type': 'info', 'msg': 'sql generated'}).decode() + '\n\n'
+            SQLBotLogUtil.info(f"db route: sql generated in {(time.perf_counter() - sql_start):.3f}s")
             # filter sql
             SQLBotLogUtil.info(full_sql_text)
 

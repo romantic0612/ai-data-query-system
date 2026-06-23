@@ -1156,24 +1156,28 @@ class LLMService:
         row = data[0]
         normalized = {str(key).lower(): value for key, value in row.items()}
 
-        metric_keys = ['metric_name', 'metric', 'name', '指标名称', '指标', '名称']
-        dimension_keys = ['student_level', 'type', 'category', '类型', '类别']
+        metric_keys = ['metric_name', 'metric', 'name', '\u6307\u6807\u540d\u79f0', '\u6307\u6807', '\u540d\u79f0']
+        dimension_keys = ['student_level', 'type', 'category', '\u7c7b\u578b', '\u7c7b\u522b']
         value_keys = [
-            'student_count', 'count', 'total', 'value', 'num', 'amount',
-            '人数', '数量', '总数', '值', '金额'
+            'student_count', 'metric_value', 'count_value', 'total_value',
+            'count', 'total', 'value', 'num', 'amount',
+            '\u4eba\u6570', '\u6570\u91cf', '\u603b\u6570', '\u503c', '\u91d1\u989d'
         ]
-        unit_keys = ['unit', '单位']
+        unit_keys = ['unit', '\u5355\u4f4d']
+        year_keys = ['stat_year', 'year', '\u5e74\u4efd', '\u5e74\u5ea6']
 
         def first_value(keys: List[str]):
             for key in keys:
-                if key in normalized and normalized[key] not in (None, ''):
-                    return normalized[key]
+                normalized_key = key.lower()
+                if normalized_key in normalized and normalized[normalized_key] not in (None, ''):
+                    return normalized[normalized_key]
             return None
 
         metric = first_value(metric_keys)
         dimension = first_value(dimension_keys)
         value = first_value(value_keys)
         unit = first_value(unit_keys)
+        year = first_value(year_keys)
 
         if value is None and len(fields) == 1:
             value = row.get(fields[0])
@@ -1188,7 +1192,7 @@ class LLMService:
         elif dimension is not None:
             label = str(dimension)
         else:
-            label = fields[0] if len(fields) == 1 else '查询结果'
+            label = fields[0] if len(fields) == 1 else '\u67e5\u8be2\u7ed3\u679c'
 
         if isinstance(value, int | float):
             display_value = f"{value:,}"
@@ -1196,8 +1200,9 @@ class LLMService:
             display_value = str(value)
 
         unit_text = f" {unit}" if unit else ""
+        year_text = f"\uff08{year}\uff09" if year is not None else ""
 
-        return f"{label}：{display_value}{unit_text}"
+        return f"{label}\uff1a{display_value}{unit_text}{year_text}"
 
     def check_save_predict_data(self, session: Session, res: str) -> bool:
 

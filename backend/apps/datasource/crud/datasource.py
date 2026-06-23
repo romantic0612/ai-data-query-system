@@ -1,7 +1,9 @@
 import datetime
 import json
+import os
 from typing import List, Optional
 
+import requests
 from fastapi import HTTPException
 from sqlalchemy import and_, text
 from sqlbot_xpack.permissions.models.ds_rules import DsRules
@@ -73,6 +75,76 @@ def get_api_sources_from_ds(ds: CoreDatasource) -> List[dict]:
     if not normalized:
         raise HTTPException(status_code=500, detail="API data source has no valid endpoint")
     return normalized
+
+
+def _resolve_api_env_value(value):
+    if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
+        return os.environ.get(value[2:-1], "")
+    if isinstance(value, dict):
+        return {k: _resolve_api_env_value(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_resolve_api_env_value(v) for v in value]
+    return value
+
+
+def _extract_api_result_path(payload, result_path: Optional[str]):
+    if not result_path:
+        return payload
+    current = payload
+    for part in result_path.split("."):
+        if part == "":
+            continue
+        if isinstance(current, dict):
+            current = current.get(part)
+        else:
+            return current
+    return current
+
+
+def _normalize_api_rows(payload, result_path: Optional[str] = None) -> List[dict]:
+    data = _extract_api_result_path(payload, result_path)
+    if isinstance(data, list):
+        return [item if isinstance(item, dict) else {"value": item} for item in data]
+    if isinstance(data, dict):
+        return [data]
+    return [{"value": data}]
+
+
+def preview_api_source(source: dict):
+    if source.get("mock_response") is not None and not source.get("url"):
+        payload = source.get("mock_response")
+    else:
+        url = source.get("url")
+        if not url:
+            return {"fields": [], "data": [], "sql": ""}
+        method = (source.get("method") or "GET").upper()
+        headers = _resolve_api_env_value(source.get("headers") or {})
+        params = _resolve_api_env_value(source.get("params") or {})
+        body = _resolve_api_env_value(source.get("body") or {})
+        timeout = int(source.get("timeout") or 15)
+        response = requests.request(
+            method,
+            url,
+            headers=headers,
+            params=params,
+            json=body if method != "GET" else None,
+            timeout=timeout,
+        )
+        response.raise_for_status()
+        payload = response.json()
+
+    rows = _normalize_api_rows(payload, source.get("result_path"))[:100]
+    field_mapping = source.get("field_mapping") or {}
+    raw_fields = list(rows[0].keys()) if rows else list(field_mapping.keys())
+    fields = [field_mapping.get(field, field) for field in raw_fields]
+    display_rows = []
+    for row in rows:
+        display_rows.append({field_mapping.get(key, key): value for key, value in row.items()})
+    return {
+        "fields": fields,
+        "data": display_rows,
+        "sql": "",
+    }
 
 
 def get_api_tables(ds: CoreDatasource) -> List[TableSchema]:
@@ -387,6 +459,14 @@ def updateField(session: SessionDep, field: CoreField):
 def preview(session: SessionDep, current_user: CurrentUser, id: int, data: TableObj):
     ds = session.query(CoreDatasource).filter(CoreDatasource.id == id).first()
     # check_status(session, ds, True)
+    if ds and equals_ignore_case(ds.type, "api"):
+        table_name = data.table.table_name if data and data.table else ""
+        sources = get_api_sources_from_ds(ds)
+        source = next((item for item in sources if item.get("id") == table_name or item.get("name") == table_name),
+                      sources[0] if sources else None)
+        if not source:
+            return {"fields": [], "data": [], "sql": ""}
+        return preview_api_source(source)
 
     # ignore data's fields param, query fields from database
     if not data.table.id:

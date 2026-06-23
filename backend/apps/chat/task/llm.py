@@ -1276,6 +1276,18 @@ class LLMService:
         return value
 
     @staticmethod
+    def _api_source_auto_retrieval_enabled(source: Dict[str, Any]) -> bool:
+        value = source.get("auto_retrieval_enabled", source.get("auto_retrieval", True))
+        if isinstance(value, str):
+            return value.strip().lower() not in {"false", "0", "no", "off"}
+        return bool(value)
+
+    @staticmethod
+    def _file_api_sources_enabled() -> bool:
+        value = os.environ.get("SQLBOT_ENABLE_FILE_API_SOURCES", "false")
+        return value.strip().lower() in {"true", "1", "yes", "on"}
+
+    @staticmethod
     def load_api_sources(session: Optional[Session] = None, oid: Optional[int] = None) -> List[Dict[str, Any]]:
         sources: List[Dict[str, Any]] = []
         if session is not None:
@@ -1287,9 +1299,17 @@ class LLMService:
                     SQLBotLogUtil.info(f"api route: skip datasource {ds.id} because auto retrieval disabled")
                     continue
                 try:
-                    sources.extend(get_api_sources_from_ds(ds))
+                    for source in get_api_sources_from_ds(ds):
+                        if not LLMService._api_source_auto_retrieval_enabled(source):
+                            SQLBotLogUtil.info(
+                                f"api route: skip api source {source.get('id') or source.get('name')} because auto retrieval disabled"
+                            )
+                            continue
+                        sources.append(source)
                 except Exception as e:
                     SQLBotLogUtil.error(f"load api datasource failed: {getattr(ds, 'id', None)}, {e}")
+        if not LLMService._file_api_sources_enabled():
+            return sources
         if not os.path.isdir(api_sources_path):
             return sources
         for file_name in os.listdir(api_sources_path):
@@ -1301,6 +1321,8 @@ class LLMService:
             file_sources = raw_config if isinstance(raw_config, list) else raw_config.get("api_sources") or []
             for source in file_sources:
                 if isinstance(source, dict):
+                    if not LLMService._api_source_auto_retrieval_enabled(source):
+                        continue
                     sources.append({**source, "datasource_id": None, "datasource_name": "File API"})
         return sources
 

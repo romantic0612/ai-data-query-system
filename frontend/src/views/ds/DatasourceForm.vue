@@ -55,6 +55,7 @@ const MAX_SELECTED_TABLES_WARNING = 100
 const schemaList = ref<any>([])
 const defaultApiConfig = JSON.stringify(
   {
+    auto_retrieval_enabled: true,
     api_sources: [
       {
         id: 'undergraduate_count',
@@ -174,6 +175,7 @@ const form = ref<any>({
   lowVersion: false,
   ssl: false,
   apiConfigText: defaultApiConfig,
+  autoRetrievalEnabled: true,
 })
 
 const close = () => {
@@ -204,8 +206,11 @@ const initForm = (item: any, editTable: boolean = false) => {
     form.value.description = item.description
     form.value.type = item.type
     form.value.configuration = item.configuration
+    form.value.autoRetrievalEnabled = true
     if (item.configuration) {
       const configuration = JSON.parse(decrypted(item.configuration))
+      form.value.autoRetrievalEnabled =
+        configuration.auto_retrieval_enabled !== false && configuration.auto_retrieval !== false
       if (item.type === 'api') {
         form.value.apiConfigText = JSON.stringify(configuration, null, 2)
       }
@@ -300,6 +305,7 @@ const initForm = (item: any, editTable: boolean = false) => {
       lowVersion: false,
       ssl: false,
       apiConfigText: defaultApiConfig,
+      autoRetrievalEnabled: true,
     }
   }
   dialogVisible.value = true
@@ -379,6 +385,7 @@ const save = async (formEl: FormInstance | undefined) => {
 const buildConf = () => {
   if (form.value.type === 'api') {
     const apiConfig = JSON.parse(form.value.apiConfigText || '{}')
+    apiConfig.auto_retrieval_enabled = form.value.autoRetrievalEnabled !== false
     form.value.configuration = encrypted(JSON.stringify(apiConfig))
     const obj = JSON.parse(JSON.stringify(form.value))
     delete obj.driver
@@ -396,6 +403,7 @@ const buildConf = () => {
     delete obj.lowVersion
     delete obj.ssl
     delete obj.apiConfigText
+    delete obj.autoRetrievalEnabled
     return obj
   }
   form.value.configuration = encrypted(
@@ -413,6 +421,7 @@ const buildConf = () => {
       timeout: form.value.timeout,
       lowVersion: form.value.lowVersion,
       ssl: form.value.ssl,
+      auto_retrieval_enabled: form.value.autoRetrievalEnabled !== false,
     })
   )
   const obj = JSON.parse(JSON.stringify(form.value))
@@ -431,6 +440,7 @@ const buildConf = () => {
   delete obj.lowVersion
   delete obj.ssl
   delete obj.apiConfigText
+  delete obj.autoRetrievalEnabled
   return obj
 }
 
@@ -665,6 +675,16 @@ defineExpose({
             clearable
             type="textarea"
           />
+        </el-form-item>
+        <el-form-item label="自动检索">
+          <el-switch
+            v-model="form.autoRetrievalEnabled"
+            active-text="参与自动检索"
+            inactive-text="不参与自动检索"
+          />
+          <div class="auto-retrieval-tip">
+            关闭后，用户未指定数据源时不会自动检索这个数据源；手动打开问数仍可使用。
+          </div>
         </el-form-item>
         <div v-if="form.type === 'excel'">
           <el-form-item prop="sheets" :label="t('ds.form.file')">
@@ -1054,6 +1074,14 @@ defineExpose({
       &.is-error {
         margin-bottom: 40px;
       }
+    }
+
+    .auto-retrieval-tip {
+      width: 100%;
+      margin-top: 6px;
+      color: #8f959e;
+      font-size: 12px;
+      line-height: 20px;
     }
   }
 

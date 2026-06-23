@@ -24,6 +24,20 @@ type ModelConfig = Record<
   }
 >
 
+const openAICompatibleArgs: ModelArg[] = [
+  { key: 'temperature', val: 0.2, type: 'number', range: '[0, 2]' },
+  { key: 'max_tokens', val: 2048, type: 'number', range: '[1, 8192]' },
+  { key: 'timeout', val: 15, type: 'number', range: '[1, 120]' },
+  { key: 'extra_body', val: '{"enable_thinking": false}', type: 'json' },
+]
+
+const minimaxArgs: ModelArg[] = [
+  { key: 'temperature', val: 0.2, type: 'number', range: '[0, 1]' },
+  { key: 'max_tokens', val: 2048, type: 'number', range: '[1, 8192]' },
+  { key: 'timeout', val: 15, type: 'number', range: '[1, 120]' },
+  { key: 'extra_body', val: '{"enable_thinking": false}', type: 'json' },
+]
+
 export const supplierList: Array<{
   id: number
   name: string
@@ -289,8 +303,9 @@ export const supplierList: Array<{
     model_config: {
       0: {
         api_domain: 'https://api.minimax.io/v1',
-        common_args: [{ key: 'temperature', val: 0.7, type: 'number', range: '[0, 1]' }],
+        common_args: minimaxArgs,
         model_options: [
+          { name: 'minimax-m2.5' },
           { name: 'MiniMax-M3' },
           { name: 'MiniMax-M2.7' },
         ],
@@ -349,8 +364,9 @@ export const supplierList: Array<{
     model_config: {
       0: {
         api_domain: 'http://127.0.0.1:8000/v1',
-        common_args: [{ key: 'temperature', val: 0.6, type: 'number', range: '[0, 1]' }],
+        common_args: openAICompatibleArgs,
         model_options: [
+          { name: 'minimax-m2.5' },
           { name: 'gpt-4.1' },
           { name: 'gpt-4.1-mini' },
           { name: 'gpt-4.1-nano' },

@@ -33,14 +33,18 @@ docker build -t ai-data-query-system:latest .
 This command reuses the old SQLBot data directory so model config, datasource config, and PostgreSQL data are kept.
 
 ```bash
-test -f /opt/ai-data-query-system/.sqlbot_secret || openssl rand -urlsafe 32 > /opt/ai-data-query-system/.sqlbot_secret
+if [ ! -f /opt/ai-data-query-system/.sqlbot_secret ]; then
+  openssl rand -urlsafe 32 > /opt/ai-data-query-system/.sqlbot_secret
+fi
+chmod 600 /opt/ai-data-query-system/.sqlbot_secret
+SECRET_KEY_VALUE="$(cat /opt/ai-data-query-system/.sqlbot_secret)"
 
 docker run -d \
   --name ai-data-query-system \
   --restart unless-stopped \
   -p 18000:8000 \
   -p 18001:8001 \
-  -e SECRET_KEY="$(cat /opt/ai-data-query-system/.sqlbot_secret)" \
+  -e "SECRET_KEY=${SECRET_KEY_VALUE}" \
   -e SERVER_IMAGE_HOST=http://114.213.146.102:18001/images/ \
   -v /opt/SQLBot-main/data/sqlbot/excel:/opt/sqlbot/data/excel \
   -v /opt/SQLBot-main/data/sqlbot/file:/opt/sqlbot/data/file \
@@ -89,14 +93,18 @@ git pull
 docker build -t ai-data-query-system:latest .
 docker stop ai-data-query-system 2>/dev/null || true
 docker rm ai-data-query-system 2>/dev/null || true
-test -f /opt/ai-data-query-system/.sqlbot_secret || openssl rand -urlsafe 32 > /opt/ai-data-query-system/.sqlbot_secret
+if [ ! -f /opt/ai-data-query-system/.sqlbot_secret ]; then
+  openssl rand -urlsafe 32 > /opt/ai-data-query-system/.sqlbot_secret
+fi
+chmod 600 /opt/ai-data-query-system/.sqlbot_secret
+SECRET_KEY_VALUE="$(cat /opt/ai-data-query-system/.sqlbot_secret)"
 
 docker run -d \
   --name ai-data-query-system \
   --restart unless-stopped \
   -p 18000:8000 \
   -p 18001:8001 \
-  -e SECRET_KEY="$(cat /opt/ai-data-query-system/.sqlbot_secret)" \
+  -e "SECRET_KEY=${SECRET_KEY_VALUE}" \
   -e SERVER_IMAGE_HOST=http://114.213.146.102:18001/images/ \
   -v /opt/SQLBot-main/data/sqlbot/excel:/opt/sqlbot/data/excel \
   -v /opt/SQLBot-main/data/sqlbot/file:/opt/sqlbot/data/file \
@@ -124,6 +132,27 @@ docker logs -f ai-data-query-system
 ```
 
 Frontend `.vue` or `.ts` changes require a full Docker build because the running container serves compiled frontend assets from `frontend/dist`.
+
+## Model Tuning Notes
+
+Admin model settings support advanced OpenAI-compatible parameters. Recommended starting values for fast question answering:
+
+```text
+temperature = 0.2
+max_tokens = 2048
+timeout = 15
+extra_body = {"enable_thinking": false}
+```
+
+If the provider rejects `extra_body.enable_thinking`, remove that parameter in the admin model page and save again. Slow API routing is usually model latency after fast rules miss; check logs for:
+
+```text
+api route: rule match hit/miss
+api route: llm intent parsed ...s
+api route: api call ...s
+db route: datasource selected ...s
+db route: sql generated ...s
+```
 
 ## API Data Source
 

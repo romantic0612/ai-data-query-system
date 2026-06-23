@@ -237,10 +237,27 @@ def prepare_for_orjson(data):
 def prepare_model_arg(origin_arg: str):
     if not isinstance(origin_arg, str):
         return origin_arg
-    if not origin_arg.strip()[0] in {'{', '['}:
+    arg = origin_arg.strip()
+    if not arg:
+        return origin_arg
+    lowered_arg = arg.lower()
+    if lowered_arg == "true":
+        return True
+    if lowered_arg == "false":
+        return False
+    if lowered_arg == "null":
+        return None
+    try:
+        if re.fullmatch(r"[-+]?\d+", arg):
+            return int(arg)
+        if re.fullmatch(r"[-+]?(\d+\.\d*|\d*\.\d+)([eE][-+]?\d+)?", arg) or re.fullmatch(r"[-+]?\d+[eE][-+]?\d+", arg):
+            return float(arg)
+    except Exception:
+        pass
+    if arg[0] not in {'{', '['}:
         return origin_arg
     try:
-        return json.loads(origin_arg)
+        return json.loads(arg)
     except:
         return origin_arg
     

@@ -62,7 +62,9 @@ def get_assistant_ds(session: Session, llm_service) -> list[dict]:
             result_list.append({
                 "id": ds.id,
                 "name": ds.name,
-                "description": build_datasource_search_description(session, ds)
+                "description": build_datasource_search_description(
+                    session, ds, getattr(llm_service.chat_question, "question", "")
+                )
             })
 
         # filter private ds if offline

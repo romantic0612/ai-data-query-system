@@ -662,7 +662,7 @@ class LLMService:
                 if not is_auto_retrieval_enabled(ds):
                     SQLBotLogUtil.info(f"db route: skip datasource {ds.id} because auto retrieval disabled")
                     continue
-                description = build_datasource_search_description(_session, ds)
+                description = build_datasource_search_description(_session, ds, self.chat_question.question)
                 _ds_list.append({
                     "id": ds.id,
                     "name": ds.name,
@@ -670,6 +670,12 @@ class LLMService:
                 })
         if not _ds_list:
             raise SingleMessageError('No available datasource configuration found')
+        rule_selected_ds = self.try_select_datasource_by_rule(_ds_list)
+        if rule_selected_ds:
+            SQLBotLogUtil.info(
+                f"db route: rule selected datasource {rule_selected_ds.get('id')} before llm selection"
+            )
+            _ds_list = [rule_selected_ds]
         ignore_auto_select = _ds_list and len(_ds_list) == 1
         # ignore auto select ds
 
@@ -1404,6 +1410,50 @@ class LLMService:
             if overlap >= 3 and overlap / max(len(cjk_chars), 1) >= 0.45:
                 return overlap
         return 0
+
+    @staticmethod
+    def _split_search_terms(value: Any) -> List[str]:
+        raw = str(value or "")
+        if not raw.strip():
+            return []
+        terms = []
+        for term in re.split(r"[\n\r,，;；|:：()\[\]【】{}<>《》\s]+", raw):
+            term = term.strip()
+            if 2 <= len(term) <= 80:
+                terms.append(term)
+        return terms
+
+    def score_datasource_candidate(self, datasource: Dict[str, Any]) -> int:
+        question = self.chat_question.question or ""
+        score = 0
+        name_score = self._api_term_score(question, datasource.get("name", ""))
+        score += name_score * 3
+
+        description = datasource.get("description", "")
+        for term in self._split_search_terms(description):
+            term_score = self._api_term_score(question, term)
+            if term_score:
+                score += min(term_score, 20)
+        return score
+
+    def try_select_datasource_by_rule(self, datasource_list: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        scored = []
+        for datasource in datasource_list:
+            score = self.score_datasource_candidate(datasource)
+            if score > 0:
+                scored.append((score, datasource))
+        if not scored:
+            return None
+        scored.sort(key=lambda item: item[0], reverse=True)
+        best_score, best_ds = scored[0]
+        second_score = scored[1][0] if len(scored) > 1 else 0
+        if best_score >= 8 and (best_score >= second_score + 3 or best_score >= 18):
+            SQLBotLogUtil.info(
+                f"db route: rule match score best={best_score}, second={second_score}, ds={best_ds.get('id')}"
+            )
+            return best_ds
+        SQLBotLogUtil.info(f"db route: rule match uncertain best={best_score}, second={second_score}")
+        return None
 
     def analyze_api_intent(self, sources: List[Dict[str, Any]]) -> Dict[str, Any]:
         if not sources:

@@ -1,6 +1,7 @@
 import datetime
 import json
 import os
+import re
 from typing import List, Optional
 
 import requests
@@ -71,7 +72,7 @@ def is_auto_retrieval_enabled(ds: CoreDatasource) -> bool:
     return True
 
 
-def build_datasource_search_description(session: SessionDep, ds: CoreDatasource,
+def build_datasource_search_description(session: SessionDep, ds: CoreDatasource, question: str = "",
                                         max_tables: int = 30, max_fields: int = 12) -> str:
     parts = []
     if ds.description:
@@ -107,11 +108,87 @@ def build_datasource_search_description(session: SessionDep, ds: CoreDatasource,
             line += f": {table_comment}"
         if field_terms:
             line += f" | fields: {', '.join(field_terms)}"
+        value_terms = _load_search_value_terms(
+            ds, table.table_name, [field.field_name for field in fields_by_table.get(table.id, [])], question
+        )
+        if value_terms:
+            line += f" | values: {', '.join(value_terms)}"
         table_lines.append(line)
 
     if table_lines:
         parts.append("tables:\n" + "\n".join(table_lines))
     return "\n".join([part for part in parts if part])
+
+
+def _load_search_value_terms(ds: CoreDatasource, table_name: str, field_names: list[str], question: str = "",
+                             max_values: int = 24) -> list[str]:
+    if not equals_ignore_case(ds.type, "excel"):
+        return []
+    searchable_fields = [
+        field for field in ["report_name", "row_name", "metric_name", "metric_path", "dimension_path"]
+        if field in set(field_names)
+    ]
+    if not searchable_fields:
+        return []
+
+    db = DB.get_db(ds.type)
+    prefix = db.prefix if hasattr(db, 'prefix') else '"'
+    suffix = db.suffix if hasattr(db, 'suffix') else '"'
+    terms: list[str] = []
+    per_field_limit = max(300, max_values * 8 // len(searchable_fields))
+    for field in searchable_fields:
+        if len(terms) >= max_values:
+            break
+        query = (
+            f'SELECT DISTINCT {prefix}{field}{suffix} AS value '
+            f'FROM {prefix}{table_name}{suffix} '
+            f'WHERE {prefix}{field}{suffix} IS NOT NULL '
+            f"AND CAST({prefix}{field}{suffix} AS TEXT) <> '' "
+            f'LIMIT {per_field_limit}'
+        )
+        try:
+            result = exec_sql(ds=ds, sql=query, origin_column=True)
+            rows = (result or {}).get("data") or []
+            if question:
+                rows = sorted(
+                    rows,
+                    key=lambda row: _search_value_score(question, row.get("value")),
+                    reverse=True
+                )
+            for row in rows:
+                value = str(row.get("value") or "").strip()
+                if question and _search_value_score(question, value) <= 0:
+                    continue
+                if value and value not in terms:
+                    terms.append(value[:80])
+                    if len(terms) >= max_values:
+                        break
+        except Exception as e:
+            SQLBotLogUtil.info(f"datasource search values skipped for {table_name}.{field}: {e}")
+            continue
+    return terms
+
+
+def _compact_search_text(value) -> str:
+    return re.sub(r"[\s\-_，。、：:；;,.!?！？（）()\[\]【】]+", "", str(value or "").lower())
+
+
+def _search_value_score(question: str, value) -> int:
+    question_text = _compact_search_text(question)
+    value_text = _compact_search_text(value)
+    if not question_text or not value_text:
+        return 0
+    if value_text in question_text:
+        return max(4, len(value_text))
+    if question_text in value_text:
+        return max(4, len(question_text))
+    value_chars = {char for char in value_text if "\u4e00" <= char <= "\u9fff"}
+    if len(value_chars) < 2:
+        return 0
+    overlap = sum(1 for char in value_chars if char in question_text)
+    if overlap >= 2 and overlap / max(len(value_chars), 1) >= 0.45:
+        return overlap
+    return 0
 
 
 def get_api_sources_from_ds(ds: CoreDatasource) -> List[dict]:
